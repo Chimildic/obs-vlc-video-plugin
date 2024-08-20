@@ -23,6 +23,11 @@
 #define S_TRACK                        "track"
 #define S_SUBTITLE_ENABLE              "subtitle_enable"
 #define S_SUBTITLE_TRACK               "subtitle"
+#define S_HW                           "hardware_acceleration"
+#define S_HW_ANY                       "any"
+#define S_HW_DXVA2                     "dxva2"
+#define S_HW_D3D11                     "d3d11va"
+#define S_HW_NONE                      "none"
 
 #define T_(text) obs_module_text(text)
 #define T_PLAYLIST                     T_("Playlist")
@@ -36,6 +41,11 @@
 #define T_TRACK                        T_("AudioTrack")
 #define T_SUBTITLE_ENABLE              T_("SubtitleEnable")
 #define T_SUBTITLE_TRACK               T_("SubtitleTrack")
+#define T_HW                           T_("HardwareAcceleration")
+#define T_HW_ANY                       T_("HardwareAcceleration.ANY")
+#define T_HW_DXVA2                     T_("HardwareAcceleration.DXVA2")
+#define T_HW_D3D11                     T_("HardwareAcceleration.D3D11")
+#define T_HW_NONE                      T_("HardwareAcceleration.NONE")
 
 /* clang-format on */
 
@@ -527,7 +537,8 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 
 static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 		     const char *path, int network_caching, int track_index,
-		     int subtitle_index, bool subtitle_enable)
+		     int subtitle_index, bool subtitle_enable,
+		     const char *hw_value)
 {
 	struct media_file_data data;
 	struct dstr new_path = {0};
@@ -551,8 +562,7 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 	if (new_media) {
 		if (is_url) {
 			struct dstr network_caching_option = {0};
-			dstr_catf(&network_caching_option,
-				  ":network-caching=%d", network_caching);
+			dstr_catf(&network_caching_option, ":network-caching=%d", network_caching);
 			libvlc_media_add_option_(new_media,
 						 network_caching_option.array);
 			dstr_free(&network_caching_option);
@@ -562,13 +572,17 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 		libvlc_media_add_option_(new_media, track_option.array);
 		dstr_free(&track_option);
 
-		struct dstr sub_option = {0};
 		if (subtitle_enable) {
-			dstr_catf(&sub_option, ":sub-track=%d",
-				  subtitle_index - 1);
+			struct dstr sub_option = {0};
+			dstr_catf(&sub_option, ":sub-track=%d", subtitle_index - 1);
+			libvlc_media_add_option_(new_media, sub_option.array);
+			dstr_free(&sub_option);
 		}
-		libvlc_media_add_option_(new_media, sub_option.array);
-		dstr_free(&sub_option);
+
+		struct dstr hw_option = {0};
+		dstr_catf(&hw_option, ":avcodec-hw=%s", hw_value);
+		libvlc_media_add_option_(new_media, hw_option.array);
+		dstr_free(&hw_option);
 
 		data.path = new_path.array;
 		data.media = new_media;
@@ -621,6 +635,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	struct vlc_source *c = data;
 	obs_data_array_t *array;
 	const char *behavior;
+	const char *hw_value;
 	size_t count;
 	int network_caching;
 	int track_index;
@@ -644,6 +659,8 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	subtitle_index = (int)obs_data_get_int(settings, S_SUBTITLE_TRACK);
 
 	subtitle_enable = obs_data_get_bool(settings, S_SUBTITLE_ENABLE);
+
+	hw_value = obs_data_get_string(settings, S_HW);
 
 	if (astrcmpi(behavior, S_BEHAVIOR_PAUSE_UNPAUSE) == 0) {
 		c->behavior = BEHAVIOR_PAUSE_UNPAUSE;
@@ -687,14 +704,16 @@ static void vlcs_update(void *data, obs_data_t *settings)
 				dstr_cat(&dir_path, ent->d_name);
 				add_file(c, &new_files, dir_path.array,
 					 network_caching, track_index,
-					 subtitle_index, subtitle_enable);
+					 subtitle_index, subtitle_enable,
+					 hw_value);
 			}
 
 			dstr_free(&dir_path);
 			os_closedir(dir);
 		} else {
 			add_file(c, &new_files, path, network_caching,
-				 track_index, subtitle_index, subtitle_enable);
+				 track_index, subtitle_index, subtitle_enable,
+				 hw_value);
 		}
 
 		obs_data_release(item);
@@ -1056,6 +1075,8 @@ static void vlcs_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, S_TRACK, 1);
 	obs_data_set_default_bool(settings, S_SUBTITLE_ENABLE, false);
 	obs_data_set_default_int(settings, S_SUBTITLE_TRACK, 1);
+
+	obs_data_set_default_string(settings, S_HW, S_HW_NONE);
 }
 
 static obs_properties_t *vlcs_properties(void *data)
@@ -1086,15 +1107,17 @@ static obs_properties_t *vlcs_properties(void *data)
 		pthread_mutex_unlock(&c->mutex);
 	}
 
-	p = obs_properties_add_list(ppts, S_BEHAVIOR, T_BEHAVIOR,
-				    OBS_COMBO_TYPE_LIST,
-				    OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(p, T_BEHAVIOR_STOP_RESTART,
-				     S_BEHAVIOR_STOP_RESTART);
-	obs_property_list_add_string(p, T_BEHAVIOR_PAUSE_UNPAUSE,
-				     S_BEHAVIOR_PAUSE_UNPAUSE);
-	obs_property_list_add_string(p, T_BEHAVIOR_ALWAYS_PLAY,
-				     S_BEHAVIOR_ALWAYS_PLAY);
+	p = obs_properties_add_list(ppts, S_BEHAVIOR, T_BEHAVIOR, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(p, T_BEHAVIOR_STOP_RESTART, S_BEHAVIOR_STOP_RESTART);
+	obs_property_list_add_string(p, T_BEHAVIOR_PAUSE_UNPAUSE, S_BEHAVIOR_PAUSE_UNPAUSE);
+	obs_property_list_add_string(p, T_BEHAVIOR_ALWAYS_PLAY, S_BEHAVIOR_ALWAYS_PLAY);
+
+
+	p = obs_properties_add_list(ppts, S_HW, T_HW, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(p, T_HW_ANY, S_HW_ANY);
+	obs_property_list_add_string(p, T_HW_DXVA2, S_HW_DXVA2);
+	obs_property_list_add_string(p, T_HW_D3D11, S_HW_D3D11);
+	obs_property_list_add_string(p, T_HW_NONE, S_HW_NONE);
 
 	dstr_cat(&filter, "Media Files (");
 	dstr_copy(&exts, EXTENSIONS_MEDIA);
@@ -1120,6 +1143,9 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_properties_add_editable_list(ppts, S_PLAYLIST, T_PLAYLIST,
 					 OBS_EDITABLE_LIST_TYPE_FILES_AND_URLS,
 					 filter.array, path.array);
+
+	obs_properties_add_bool(ppts, S_SHUFFLE, T_SHUFFLE);
+
 	dstr_free(&path);
 	dstr_free(&filter);
 	dstr_free(&exts);
@@ -1130,8 +1156,7 @@ static obs_properties_t *vlcs_properties(void *data)
 
 	obs_properties_add_int(ppts, S_TRACK, T_TRACK, 1, 10, 1);
 	obs_properties_add_bool(ppts, S_SUBTITLE_ENABLE, T_SUBTITLE_ENABLE);
-	obs_properties_add_int(ppts, S_SUBTITLE_TRACK, T_SUBTITLE_TRACK, 1,
-			       1000, 1);
+	obs_properties_add_int(ppts, S_SUBTITLE_TRACK, T_SUBTITLE_TRACK, 1, 1000, 1);
 
 	return ppts;
 }
