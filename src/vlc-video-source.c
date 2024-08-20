@@ -28,6 +28,7 @@
 #define S_HW_DXVA2                     "dxva2"
 #define S_HW_D3D11                     "d3d11va"
 #define S_HW_NONE                      "none"
+#define S_SKIP_B_FRAMES	               "skip_b_frames"
 
 #define T_(text) obs_module_text(text)
 #define T_PLAYLIST                     T_("Playlist")
@@ -46,6 +47,7 @@
 #define T_HW_DXVA2                     T_("HardwareAcceleration.DXVA2")
 #define T_HW_D3D11                     T_("HardwareAcceleration.D3D11")
 #define T_HW_NONE                      T_("HardwareAcceleration.NONE")
+#define T_SKIP_B_FRAMES	               T_("SKIP_B_FRAMES")
 
 /* clang-format on */
 
@@ -538,7 +540,7 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 		     const char *path, int network_caching, int track_index,
 		     int subtitle_index, bool subtitle_enable,
-		     const char *hw_value)
+		     const char *hw_value, bool skip_b_frames)
 {
 	struct media_file_data data;
 	struct dstr new_path = {0};
@@ -583,6 +585,10 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 		dstr_catf(&hw_option, ":avcodec-hw=%s", hw_value);
 		libvlc_media_add_option_(new_media, hw_option.array);
 		dstr_free(&hw_option);
+
+		if (skip_b_frames) {
+			libvlc_media_add_option_(new_media, ":avcodec-skip-frame=1");
+		}
 
 		data.path = new_path.array;
 		data.media = new_media;
@@ -641,6 +647,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	int track_index;
 	int subtitle_index;
 	bool subtitle_enable;
+	bool skip_b_frames;
 
 	da_init(new_files);
 	da_init(old_files);
@@ -661,6 +668,8 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	subtitle_enable = obs_data_get_bool(settings, S_SUBTITLE_ENABLE);
 
 	hw_value = obs_data_get_string(settings, S_HW);
+
+	skip_b_frames = obs_data_get_bool(settings, S_SKIP_B_FRAMES);
 
 	if (astrcmpi(behavior, S_BEHAVIOR_PAUSE_UNPAUSE) == 0) {
 		c->behavior = BEHAVIOR_PAUSE_UNPAUSE;
@@ -705,7 +714,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 				add_file(c, &new_files, dir_path.array,
 					 network_caching, track_index,
 					 subtitle_index, subtitle_enable,
-					 hw_value);
+					 hw_value, skip_b_frames);
 			}
 
 			dstr_free(&dir_path);
@@ -713,7 +722,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 		} else {
 			add_file(c, &new_files, path, network_caching,
 				 track_index, subtitle_index, subtitle_enable,
-				 hw_value);
+				 hw_value, skip_b_frames);
 		}
 
 		obs_data_release(item);
@@ -1077,6 +1086,7 @@ static void vlcs_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, S_SUBTITLE_TRACK, 1);
 
 	obs_data_set_default_string(settings, S_HW, S_HW_NONE);
+	obs_data_set_default_bool(settings, S_SKIP_B_FRAMES, false);
 }
 
 static obs_properties_t *vlcs_properties(void *data)
@@ -1090,7 +1100,6 @@ static obs_properties_t *vlcs_properties(void *data)
 
 	obs_properties_set_flags(ppts, OBS_PROPERTIES_DEFER_UPDATE);
 	obs_properties_add_bool(ppts, S_LOOP, T_LOOP);
-	obs_properties_add_bool(ppts, S_SHUFFLE, T_SHUFFLE);
 
 	if (c) {
 		pthread_mutex_lock(&c->mutex);
@@ -1118,6 +1127,8 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_property_list_add_string(p, T_HW_DXVA2, S_HW_DXVA2);
 	obs_property_list_add_string(p, T_HW_D3D11, S_HW_D3D11);
 	obs_property_list_add_string(p, T_HW_NONE, S_HW_NONE);
+
+	obs_properties_add_bool(ppts, S_SKIP_B_FRAMES, T_SKIP_B_FRAMES);
 
 	dstr_cat(&filter, "Media Files (");
 	dstr_copy(&exts, EXTENSIONS_MEDIA);
