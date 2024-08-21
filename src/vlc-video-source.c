@@ -3,6 +3,7 @@
 #include <util/threading.h>
 #include <util/platform.h>
 #include <util/dstr.h>
+#include <Windows.h>
 
 #define do_log(level, format, ...)                \
 	blog(level, "[vlc_source: '%s'] " format, \
@@ -29,6 +30,15 @@
 #define S_HW_D3D11                     "d3d11va"
 #define S_HW_NONE                      "none"
 #define S_SKIP_B_FRAMES	               "skip_b_frames"
+#define S_SLQ                          "streamlink_quality"
+#define S_SLQ_BEST                     "best"
+#define S_SLQ_WORST                    "worst"
+#define S_SLQ_AUDIO                    "audio_only"
+#define S_SLQ_1080P                    "1080p"
+#define S_SLQ_720P                     "720p"
+#define S_SLQ_480P                     "480p"
+#define S_SLQ_360P                     "360p"
+#define S_SLQ_160P                     "160p"
 
 #define T_(text) obs_module_text(text)
 #define T_PLAYLIST                     T_("Playlist")
@@ -48,10 +58,21 @@
 #define T_HW_D3D11                     T_("HardwareAcceleration.D3D11")
 #define T_HW_NONE                      T_("HardwareAcceleration.NONE")
 #define T_SKIP_B_FRAMES	               T_("SKIP_B_FRAMES")
+#define T_SLQ                          T_("StreamlinkQuality")
+#define T_SLQ_BEST                     T_("StreamlinkQuality.Best")
+#define T_SLQ_WORST                    T_("StreamlinkQuality.Worst")
+#define T_SLQ_AUDIO                    T_("StreamlinkQuality.AudioOnly")
+#define T_SLQ_1080P                    T_("1080p")
+#define T_SLQ_720P                     T_("720p")
+#define T_SLQ_480P                     T_("480p")
+#define T_SLQ_360P                     T_("360p")
+#define T_SLQ_160P                     T_("160p")
 
 /* clang-format on */
 
 /* ------------------------------------------------------------------------- */
+
+static bool is_streamlink_available = false;
 
 struct media_file_data {
 	char *path;
@@ -537,10 +558,90 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 	return 0;
 }
 
+wchar_t *convertCharArrayToLPCWSTR(const char *charArray)
+{
+	int size = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, NULL, 0);
+	wchar_t *lpwstr = (wchar_t *)malloc(size * sizeof(wchar_t));
+	MultiByteToWideChar(CP_UTF8, 0, charArray, -1, lpwstr, size);
+	return lpwstr;
+}
+
+static char *execute_command(const char *command)
+{
+	PROCESS_INFORMATION pi;
+	STARTUPINFO si;
+	DWORD bytesRead;
+	HANDLE hReadPipe, hWritePipe;
+	SECURITY_ATTRIBUTES sa;
+
+	sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+	sa.bInheritHandle = TRUE;
+	sa.lpSecurityDescriptor = NULL;
+	if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+		CloseHandle(hReadPipe);
+		CloseHandle(hWritePipe);
+		return NULL;
+	}
+
+	ZeroMemory(&pi, sizeof(pi));
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	si.dwFlags |= STARTF_USESTDHANDLES;
+	si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+	si.hStdOutput = hWritePipe;
+	si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+
+	wchar_t *lpcwstr_command = convertCharArrayToLPCWSTR(command);
+	if (!CreateProcess(NULL, lpcwstr_command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+		WaitForSingleObject(pi.hProcess, INFINITE);
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+	}
+
+	char *buffer = (char *)malloc(4096);
+	if (ReadFile(hReadPipe, buffer, 4096, &bytesRead, NULL)) {
+		buffer[strcspn(buffer, "\r\n")] = 0;
+	} else {
+		free(buffer);
+		return NULL;
+	}
+
+	CloseHandle(hReadPipe);
+	CloseHandle(hWritePipe);
+	WaitForSingleObject(pi.hProcess, INFINITE);
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+
+	return buffer;
+}
+
+void toLowerCase(char *str)
+{
+	while (*str) {
+		*str = tolower((unsigned char)*str);
+		str++;
+	}
+}
+
+void detect_streamlink() {
+	char *env_path = getenv("PATH");
+	toLowerCase(env_path);
+	is_streamlink_available = strstr(env_path, "streamlink") != NULL;
+}
+
+static char *get_streamlink(const char *url, const char *quality)
+{
+	char command[4096];
+	char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p", quality);
+	snprintf(command, sizeof(command), "streamlink %s \"%s\" --stream-url", url, fallback_quality);
+	return execute_command(command);
+}
+
 static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 		     const char *path, int network_caching, int track_index,
 		     int subtitle_index, bool subtitle_enable,
-		     const char *hw_value, bool skip_b_frames)
+		     const char *quality, const char *hw_value,
+		     bool skip_b_frames)
 {
 	struct media_file_data data;
 	struct dstr new_path = {0};
@@ -552,8 +653,11 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 	if (!is_url)
 		dstr_replace(&new_path, "/", "\\");
 #endif
+	if (is_streamlink_available)
+	{
+		dstr_copy(&new_path, get_streamlink(new_path.array, quality));
+	}
 	path = new_path.array;
-
 	new_media = get_media(&c->files, path);
 
 	if (!new_media)
@@ -565,8 +669,7 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 		if (is_url) {
 			struct dstr network_caching_option = {0};
 			dstr_catf(&network_caching_option, ":network-caching=%d", network_caching);
-			libvlc_media_add_option_(new_media,
-						 network_caching_option.array);
+			libvlc_media_add_option_(new_media, network_caching_option.array);
 			dstr_free(&network_caching_option);
 		}
 		struct dstr track_option = {0};
@@ -641,6 +744,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	struct vlc_source *c = data;
 	obs_data_array_t *array;
 	const char *behavior;
+	const char *quality;
 	const char *hw_value;
 	size_t count;
 	int network_caching;
@@ -666,6 +770,8 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	subtitle_index = (int)obs_data_get_int(settings, S_SUBTITLE_TRACK);
 
 	subtitle_enable = obs_data_get_bool(settings, S_SUBTITLE_ENABLE);
+
+	quality = obs_data_get_string(settings, S_SLQ);
 
 	hw_value = obs_data_get_string(settings, S_HW);
 
@@ -714,7 +820,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 				add_file(c, &new_files, dir_path.array,
 					 network_caching, track_index,
 					 subtitle_index, subtitle_enable,
-					 hw_value, skip_b_frames);
+					 quality, hw_value, skip_b_frames);
 			}
 
 			dstr_free(&dir_path);
@@ -722,7 +828,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 		} else {
 			add_file(c, &new_files, path, network_caching,
 				 track_index, subtitle_index, subtitle_enable,
-				 hw_value, skip_b_frames);
+				 quality, hw_value, skip_b_frames);
 		}
 
 		obs_data_release(item);
@@ -1042,6 +1148,9 @@ static void *vlcs_create(obs_data_t *settings, obs_source_t *source)
 	obs_source_update(source, NULL);
 
 	UNUSED_PARAMETER(settings);
+
+	detect_streamlink();
+
 	return c;
 
 error:
@@ -1085,6 +1194,7 @@ static void vlcs_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, S_SUBTITLE_ENABLE, false);
 	obs_data_set_default_int(settings, S_SUBTITLE_TRACK, 1);
 
+	obs_data_set_default_string(settings, S_SLQ, S_SLQ_BEST);
 	obs_data_set_default_string(settings, S_HW, S_HW_NONE);
 	obs_data_set_default_bool(settings, S_SKIP_B_FRAMES, false);
 }
@@ -1121,6 +1231,16 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_property_list_add_string(p, T_BEHAVIOR_PAUSE_UNPAUSE, S_BEHAVIOR_PAUSE_UNPAUSE);
 	obs_property_list_add_string(p, T_BEHAVIOR_ALWAYS_PLAY, S_BEHAVIOR_ALWAYS_PLAY);
 
+	if (is_streamlink_available) {
+		p = obs_properties_add_list(ppts, S_SLQ, T_SLQ, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+		obs_property_list_add_string(p, T_SLQ_BEST, S_SLQ_BEST);
+		obs_property_list_add_string(p, T_SLQ_1080P, S_SLQ_1080P);
+		obs_property_list_add_string(p, T_SLQ_720P, S_SLQ_720P);
+		obs_property_list_add_string(p, T_SLQ_480P, S_SLQ_480P);
+		obs_property_list_add_string(p, T_SLQ_360P, S_SLQ_360P);
+		obs_property_list_add_string(p, T_SLQ_160P, S_SLQ_160P);
+		obs_property_list_add_string(p, T_SLQ_WORST, S_SLQ_WORST);
+	}
 
 	p = obs_properties_add_list(ppts, S_HW, T_HW, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(p, T_HW_ANY, S_HW_ANY);
@@ -1151,9 +1271,7 @@ static obs_properties_t *vlcs_properties(void *data)
 	dstr_cat_dstr(&filter, &exts);
 	dstr_cat(&filter, ")");
 
-	obs_properties_add_editable_list(ppts, S_PLAYLIST, T_PLAYLIST,
-					 OBS_EDITABLE_LIST_TYPE_FILES_AND_URLS,
-					 filter.array, path.array);
+	obs_properties_add_editable_list(ppts, S_PLAYLIST, T_PLAYLIST, OBS_EDITABLE_LIST_TYPE_FILES_AND_URLS, filter.array, path.array);
 
 	obs_properties_add_bool(ppts, S_SHUFFLE, T_SHUFFLE);
 
