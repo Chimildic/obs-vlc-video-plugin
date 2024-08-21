@@ -72,8 +72,6 @@
 
 /* ------------------------------------------------------------------------- */
 
-static bool is_streamlink_available = false;
-
 struct media_file_data {
 	char *path;
 	libvlc_media_t *media;
@@ -108,7 +106,95 @@ struct vlc_source {
 	obs_hotkey_id stop_hotkey;
 	obs_hotkey_id playlist_next_hotkey;
 	obs_hotkey_id playlist_prev_hotkey;
+
+	PROCESS_INFORMATION process_information;
+	char *server_url;
 };
+
+static bool is_streamlink_available = false;
+
+void toLowerCase(char *str)
+{
+	while (*str) {
+		*str = tolower((unsigned char)*str);
+		str++;
+	}
+}
+
+static void detect_streamlink() {
+	char *env_path = getenv("PATH");
+	toLowerCase(env_path);
+	is_streamlink_available = strstr(env_path, "streamlink") != NULL;
+}
+
+static wchar_t *convertCharArrayToLPCWSTR(const char *charArray)
+{
+	int size = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, NULL, 0);
+	wchar_t *lpwstr = (wchar_t *)malloc(size * sizeof(wchar_t));
+	MultiByteToWideChar(CP_UTF8, 0, charArray, -1, lpwstr, size);
+	return lpwstr;
+}
+
+static PROCESS_INFORMATION create_process(const char *command)
+{
+	PROCESS_INFORMATION pi;
+	STARTUPINFO si;
+
+	ZeroMemory(&pi, sizeof(pi));
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	si.dwFlags |= STARTF_USESTDHANDLES;
+	si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+	si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+	si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+
+	wchar_t *lpcwstr_command = convertCharArrayToLPCWSTR(command);
+	if (!CreateProcess(NULL, lpcwstr_command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+		WaitForSingleObject(pi.hProcess, INFINITE);
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+	}
+	return pi;
+}
+
+static void terminate_process(PROCESS_INFORMATION pi) {
+	if (pi.hProcess != NULL) {
+		TerminateProcess(pi.hProcess, 0);
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+	}
+}
+
+static int get_free_port()
+{
+	SOCKET sockfd;
+	struct sockaddr_in addr;
+	int addr_len = sizeof(addr);
+
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd == -1) {
+		return -1;
+	}
+	
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = INADDR_ANY;
+	addr.sin_port = htons(0);
+
+	if (bind(sockfd, (SOCKADDR*)&addr, sizeof(addr)) == -1) {
+		closesocket(sockfd);
+		return -1;
+	}
+
+	if (getsockname(sockfd, (SOCKADDR*)&addr, &addr_len) == -1) {
+		closesocket(sockfd);
+		return -1;
+	}
+
+	int free_port = ntohs(addr.sin_port);
+	closesocket(sockfd);
+	return free_port;
+}
 
 static libvlc_media_t *get_media(media_file_array_t *files, const char *path)
 {
@@ -377,6 +463,7 @@ static const char *vlcs_get_name(void *unused)
 static void vlcs_destroy(void *data)
 {
 	struct vlc_source *c = data;
+	terminate_process(c->process_information);
 
 	if (c->media_list_player) {
 		libvlc_media_list_player_stop_(c->media_list_player);
@@ -558,83 +645,19 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 	return 0;
 }
 
-wchar_t *convertCharArrayToLPCWSTR(const char *charArray)
-{
-	int size = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, NULL, 0);
-	wchar_t *lpwstr = (wchar_t *)malloc(size * sizeof(wchar_t));
-	MultiByteToWideChar(CP_UTF8, 0, charArray, -1, lpwstr, size);
-	return lpwstr;
-}
-
-static char *execute_command(const char *command)
-{
-	PROCESS_INFORMATION pi;
-	STARTUPINFO si;
-	DWORD bytesRead;
-	HANDLE hReadPipe, hWritePipe;
-	SECURITY_ATTRIBUTES sa;
-
-	sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-	sa.bInheritHandle = TRUE;
-	sa.lpSecurityDescriptor = NULL;
-	if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
-		CloseHandle(hReadPipe);
-		CloseHandle(hWritePipe);
-		return NULL;
-	}
-
-	ZeroMemory(&pi, sizeof(pi));
-	ZeroMemory(&si, sizeof(si));
-	si.cb = sizeof(si);
-	si.dwFlags |= STARTF_USESTDHANDLES;
-	si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-	si.hStdOutput = hWritePipe;
-	si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-
-	wchar_t *lpcwstr_command = convertCharArrayToLPCWSTR(command);
-	if (!CreateProcess(NULL, lpcwstr_command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-		WaitForSingleObject(pi.hProcess, INFINITE);
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
-	}
-
-	char *buffer = (char *)malloc(4096);
-	if (ReadFile(hReadPipe, buffer, 4096, &bytesRead, NULL)) {
-		buffer[strcspn(buffer, "\r\n")] = 0;
-	} else {
-		free(buffer);
-		return NULL;
-	}
-
-	CloseHandle(hReadPipe);
-	CloseHandle(hWritePipe);
-	WaitForSingleObject(pi.hProcess, INFINITE);
-	CloseHandle(pi.hProcess);
-	CloseHandle(pi.hThread);
-
-	return buffer;
-}
-
-void toLowerCase(char *str)
-{
-	while (*str) {
-		*str = tolower((unsigned char)*str);
-		str++;
-	}
-}
-
-void detect_streamlink() {
-	char *env_path = getenv("PATH");
-	toLowerCase(env_path);
-	is_streamlink_available = strstr(env_path, "streamlink") != NULL;
-}
-
-static char *get_streamlink(const char *url, const char *quality)
+static void run_streamlink_server(struct vlc_source *c, const char *url, const char *quality)
 {
 	char command[4096];
 	char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p", quality);
-	snprintf(command, sizeof(command), "streamlink %s \"%s\" --stream-url", url, fallback_quality);
-	return execute_command(command);
+	int port = get_free_port();
+	snprintf(command, sizeof(command), "streamlink %s \"%s\" --player-continuous-http --player-external-http --player-external-http-port %d", url, fallback_quality, port);
+
+	terminate_process(c->process_information);
+	c->process_information = create_process(command);
+
+	char server_url[25];
+	snprintf(server_url, sizeof(server_url), "http://127.0.0.1:%d/", port);
+	c->server_url = server_url;
 }
 
 static void add_file(struct vlc_source *c, media_file_array_t *new_files,
@@ -655,7 +678,8 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 #endif
 	if (is_streamlink_available)
 	{
-		dstr_copy(&new_path, get_streamlink(new_path.array, quality));
+		run_streamlink_server(c, new_path.array, quality);
+		dstr_copy(&new_path, c->server_url);
 	}
 	path = new_path.array;
 	new_media = get_media(&c->files, path);
@@ -1279,8 +1303,7 @@ static obs_properties_t *vlcs_properties(void *data)
 	dstr_free(&filter);
 	dstr_free(&exts);
 
-	p = obs_properties_add_int(ppts, S_NETWORK_CACHING, T_NETWORK_CACHING,
-				   100, 60000, 10);
+	p = obs_properties_add_int(ppts, S_NETWORK_CACHING, T_NETWORK_CACHING, 100, 60000, 10);
 	obs_property_int_set_suffix(p, " ms");
 
 	obs_properties_add_int(ppts, S_TRACK, T_TRACK, 1, 10, 1);
