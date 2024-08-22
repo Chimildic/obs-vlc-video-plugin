@@ -30,7 +30,7 @@
 #define S_VLC_HW_DXVA2                 "dxva2"
 #define S_VLC_HW_D3D11                 "d3d11va"
 #define S_VLC_HW_NONE                  "none"
-#define S_VLC_SKIP_B_FRAMES	           "skip_b_frames"
+#define S_VLC_SKIP_B_FRAMES            "skip_b_frames"
 #define S_VLC_REST_OPTIONS             "vlc_rest_options"
 #define S_SL_ENABLE                    "streamlink_enable"
 #define S_SL_URL                       "streamlink_url"
@@ -66,12 +66,15 @@
 #define T_VLC_HW_DXVA2                 T_("VLC.HW.DXVA2")
 #define T_VLC_HW_D3D11                 T_("VLC.HW.D3D11")
 #define T_VLC_HW_NONE                  T_("VLC.HW.NONE")
-#define T_VLC_SKIP_B_FRAMES	           T_("VLC.SkipBFrames")
+#define T_VLC_SKIP_B_FRAMES            T_("VLC.SkipBFrames")
 #define T_VLC_REST_OPTIONS             T_("VLC.RestOptions")
+#define T_VLC_REST_OPTIONS_DESCRIPTION T_("VLC.RestOptions.Description")
 #define T_SL_ENABLE                    T_("Streamlink.Enable")
 #define T_SL_URL                       T_("Streamlink.URL")
 #define T_SL_TWITCH_LOW_LATENCY        T_("Streamlink.TwitchLowLatency")
+#define T_SL_TWITCH_LOW_LATENCY_DESCRIPTION T_("Streamlink.TwitchLowLatency.Description")
 #define T_SL_TWITCH_DISABLE_ADS        T_("Streamlink.TwitchDisableAds")
+#define T_SL_TWITCH_DISABLE_ADS_DESCRIPTION T_("Streamlink.TwitchDisableAds.Description")
 #define T_SL_SHOW_CMD                  T_("Streamlink.ShowCMD")
 #define T_SLQ                          T_("Streamlink.Quality")
 #define T_SLQ_BEST                     T_("Streamlink.Quality.Best")
@@ -1311,9 +1314,14 @@ static obs_properties_t *vlcs_properties(void *data)
 		obs_property_list_add_string(p, T_SLQ_WORST, S_SLQ_WORST);
 
 		p = obs_properties_add_text(streamlink_group_ppts, S_SL_REST_OPTIONS, T_SL_REST_OPTIONS, OBS_TEXT_DEFAULT);
+		obs_property_set_long_description(p, T_SL_REST_OPTIONS_DESCRIPTION);
 
-		obs_properties_add_bool(streamlink_group_ppts, S_SL_TWITCH_LOW_LATENCY, T_SL_TWITCH_LOW_LATENCY);
-		obs_properties_add_bool(streamlink_group_ppts, S_SL_TWITCH_DISABLE_ADS, T_SL_TWITCH_DISABLE_ADS);
+		p = obs_properties_add_bool(streamlink_group_ppts, S_SL_TWITCH_LOW_LATENCY, T_SL_TWITCH_LOW_LATENCY);
+		obs_property_set_long_description(p, T_SL_TWITCH_LOW_LATENCY_DESCRIPTION);
+
+		p = obs_properties_add_bool(streamlink_group_ppts, S_SL_TWITCH_DISABLE_ADS, T_SL_TWITCH_DISABLE_ADS);
+		obs_property_set_long_description(p, T_SL_TWITCH_DISABLE_ADS_DESCRIPTION);
+
 		obs_properties_add_bool(streamlink_group_ppts, S_SL_SHOW_CMD, T_SL_SHOW_CMD);
 
 		obs_properties_add_group(root_ppts, S_SL_ENABLE, T_SL_ENABLE, OBS_GROUP_CHECKABLE, streamlink_group_ppts);
@@ -1369,7 +1377,8 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_properties_add_int(vlc_group_ppts, S_TRACK, T_TRACK, 1, 10, 1);
 	obs_properties_add_bool(vlc_group_ppts, S_SUBTITLE_ENABLE, T_SUBTITLE_ENABLE);
 	obs_properties_add_int(vlc_group_ppts, S_SUBTITLE_TRACK, T_SUBTITLE_TRACK, 1, 1000, 1);
-	obs_properties_add_text(vlc_group_ppts, S_VLC_REST_OPTIONS, T_VLC_REST_OPTIONS, OBS_TEXT_DEFAULT);
+	p = obs_properties_add_text(vlc_group_ppts, S_VLC_REST_OPTIONS, T_VLC_REST_OPTIONS, OBS_TEXT_DEFAULT);
+	obs_property_set_long_description(p, T_VLC_REST_OPTIONS_DESCRIPTION);
 
 	obs_properties_add_group(root_ppts, S_VLC_GROUP, T_VLC_GROUP, OBS_GROUP_NORMAL, vlc_group_ppts);
 
