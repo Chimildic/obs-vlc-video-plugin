@@ -31,6 +31,7 @@
 #define S_VLC_HW_D3D11                 "d3d11va"
 #define S_VLC_HW_NONE                  "none"
 #define S_VLC_SKIP_B_FRAMES	           "skip_b_frames"
+#define S_VLC_REST_OPTIONS             "vlc_rest_options"
 #define S_SL_ENABLE                    "streamlink_enable"
 #define S_SL_URL                       "streamlink_url"
 #define S_SL_TWITCH_LOW_LATENCY        "streamlink_twitch_low_latency"
@@ -66,6 +67,7 @@
 #define T_VLC_HW_D3D11                 T_("VLC.HW.D3D11")
 #define T_VLC_HW_NONE                  T_("VLC.HW.NONE")
 #define T_VLC_SKIP_B_FRAMES	           T_("VLC.SkipBFrames")
+#define T_VLC_REST_OPTIONS             T_("VLC.RestOptions")
 #define T_SL_ENABLE                    T_("Streamlink.Enable")
 #define T_SL_URL                       T_("Streamlink.URL")
 #define T_SL_TWITCH_LOW_LATENCY        T_("Streamlink.TwitchLowLatency")
@@ -132,6 +134,7 @@ struct vlc_config {
 
 	const char *hw_value;
 	bool skip_b_frames;
+	const char *vlc_rest_options;
 
 	bool streamlink_enable;
 	const char *streamlink_url;
@@ -139,7 +142,7 @@ struct vlc_config {
 	bool twitch_low_latency_enable;
 	bool twitch_disable_ads;
 	bool show_cmd;
-	const char *rest_options;
+	const char *streamlink_rest_options;
 };
 
 static bool is_streamlink_available = false;
@@ -688,26 +691,26 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 static void run_streamlink_server(struct media_file_data *data, const char *url, struct vlc_config *config)
 {
 	char command[4096] = "streamlink --player-external-http";
-	if (strstr(config->rest_options, "--url") == NULL) {
+	if (strstr(config->streamlink_rest_options, "--url") == NULL) {
 		strcat(command, " --url ");
 		strcat(command, url);
 	}
-	if (strstr(config->rest_options, "--default-stream") == NULL) {
+	if (strstr(config->streamlink_rest_options, "--default-stream") == NULL) {
 		char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p", config->quality);
 		strcat(command, " --default-stream ");
 		strcat(command, fallback_quality);
 	}
 	int port;
-	const char *port_option = strstr(config->rest_options, "--player-external-http-port");
+	const char *port_option = strstr(config->streamlink_rest_options, "--player-external-http-port");
 	if (port_option == NULL) {
 		port = get_free_port();
 		snprintf(command, sizeof(command), "%s --player-external-http-port %d", command, port);
 	} else {
 		port = atoi(&port_option[sizeof("--player-external-http-port")]);
 	}
-	config->twitch_low_latency_enable &&strcat(command, " --twitch-low-latency");
+	config->twitch_low_latency_enable && strcat(command, " --twitch-low-latency");
 	config->twitch_disable_ads && strcat(command, " --twitch-disable-ads");
-	snprintf(command, sizeof(command), "%s %s", command, config->rest_options);
+	snprintf(command, sizeof(command), "%s %s", command, config->streamlink_rest_options);
 
 	terminate_process(data->process_information);
 	data->process_information = create_process(command, config->show_cmd);
@@ -738,7 +741,7 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files, const 
 		new_media = create_media_from_file(new_path.array);
 
 	if (new_media) {
-		char buffer[50];
+		char buffer[512];
 		snprintf(buffer, sizeof(buffer), ":audio-track=%d", vlc_config->track_index - 1);
 		libvlc_media_add_option_(new_media, buffer);
 
@@ -755,6 +758,14 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files, const 
 		}
 		if (vlc_config->skip_b_frames) {
 			libvlc_media_add_option_(new_media, ":avcodec-skip-frame=1");
+		}
+
+		strcpy(buffer, vlc_config->vlc_rest_options);
+		char *next_token = NULL;
+		char *option = strtok_s(buffer, " ", &next_token);
+		while (option != NULL) {
+			libvlc_media_add_option_(new_media, option);
+			option = strtok_s(NULL, " ", &next_token);
 		}
 
 		data.path = new_path.array;
@@ -823,6 +834,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 
 	vlc_config.hw_value = obs_data_get_string(settings, S_VLC_HW);
 	vlc_config.skip_b_frames = obs_data_get_bool(settings, S_VLC_SKIP_B_FRAMES);
+	vlc_config.vlc_rest_options = obs_data_get_string(settings, S_VLC_REST_OPTIONS);
 
 	vlc_config.streamlink_enable = obs_data_get_bool(settings, S_SL_ENABLE);
 	vlc_config.quality = obs_data_get_string(settings, S_SLQ);
@@ -830,7 +842,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	vlc_config.twitch_low_latency_enable = obs_data_get_bool(settings, S_SL_TWITCH_LOW_LATENCY);
 	vlc_config.twitch_disable_ads = obs_data_get_bool(settings, S_SL_TWITCH_DISABLE_ADS);
 	vlc_config.show_cmd = obs_data_get_bool(settings, S_SL_SHOW_CMD);
-	vlc_config.rest_options = obs_data_get_string(settings, S_SL_REST_OPTIONS);
+	vlc_config.streamlink_rest_options = obs_data_get_string(settings, S_SL_REST_OPTIONS);
 
 	if (astrcmpi(behavior, S_BEHAVIOR_PAUSE_UNPAUSE) == 0) {
 		vlc_source->behavior = BEHAVIOR_PAUSE_UNPAUSE;
@@ -1255,6 +1267,7 @@ static void vlcs_defaults(obs_data_t *settings)
 	obs_data_set_default_string(settings, S_SL_REST_OPTIONS, "");
 	obs_data_set_default_string(settings, S_VLC_HW, S_VLC_HW_NONE);
 	obs_data_set_default_bool(settings, S_VLC_SKIP_B_FRAMES, false);
+	obs_data_set_default_string(settings, S_VLC_REST_OPTIONS, "");
 }
 
 static obs_properties_t *vlcs_properties(void *data)
@@ -1356,6 +1369,7 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_properties_add_int(vlc_group_ppts, S_TRACK, T_TRACK, 1, 10, 1);
 	obs_properties_add_bool(vlc_group_ppts, S_SUBTITLE_ENABLE, T_SUBTITLE_ENABLE);
 	obs_properties_add_int(vlc_group_ppts, S_SUBTITLE_TRACK, T_SUBTITLE_TRACK, 1, 1000, 1);
+	obs_properties_add_text(vlc_group_ppts, S_VLC_REST_OPTIONS, T_VLC_REST_OPTIONS, OBS_TEXT_DEFAULT);
 
 	obs_properties_add_group(root_ppts, S_VLC_GROUP, T_VLC_GROUP, OBS_GROUP_NORMAL, vlc_group_ppts);
 
