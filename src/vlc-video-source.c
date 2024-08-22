@@ -25,12 +25,12 @@
 #define S_TRACK                        "track"
 #define S_SUBTITLE_ENABLE              "subtitle_enable"
 #define S_SUBTITLE_TRACK               "subtitle"
-#define S_HW                           "hardware_acceleration"
-#define S_HW_ANY                       "any"
-#define S_HW_DXVA2                     "dxva2"
-#define S_HW_D3D11                     "d3d11va"
-#define S_HW_NONE                      "none"
-#define S_SKIP_B_FRAMES	               "skip_b_frames"
+#define S_VLC_HW                       "hardware_acceleration"
+#define S_VLC_HW_ANY                   "any"
+#define S_VLC_HW_DXVA2                 "dxva2"
+#define S_VLC_HW_D3D11                 "d3d11va"
+#define S_VLC_HW_NONE                  "none"
+#define S_VLC_SKIP_B_FRAMES	           "skip_b_frames"
 #define S_SL_ENABLE                    "streamlink_enable"
 #define S_SL_URL                       "streamlink_url"
 #define S_SL_TWITCH_LOW_LATENCY        "streamlink_twitch_low_latency"
@@ -45,7 +45,7 @@
 #define S_SLQ_480P                     "480p"
 #define S_SLQ_360P                     "360p"
 #define S_SLQ_160P                     "160p"
-#define S_SL_REST_OPTIONS              "rest_options"
+#define S_SL_REST_OPTIONS              "streamlink_rest_options"
 
 #define T_(text) obs_module_text(text)
 #define T_VLC_GROUP                    T_("VLCGroup")
@@ -60,12 +60,12 @@
 #define T_TRACK                        T_("AudioTrack")
 #define T_SUBTITLE_ENABLE              T_("SubtitleEnable")
 #define T_SUBTITLE_TRACK               T_("SubtitleTrack")
-#define T_HW                           T_("HardwareAcceleration")
-#define T_HW_ANY                       T_("HardwareAcceleration.ANY")
-#define T_HW_DXVA2                     T_("HardwareAcceleration.DXVA2")
-#define T_HW_D3D11                     T_("HardwareAcceleration.D3D11")
-#define T_HW_NONE                      T_("HardwareAcceleration.NONE")
-#define T_SKIP_B_FRAMES	               T_("SKIP_B_FRAMES")
+#define T_VLC_HW                       T_("VLC.HW")
+#define T_VLC_HW_ANY                   T_("VLC.HW.ANY")
+#define T_VLC_HW_DXVA2                 T_("VLC.HW.DXVA2")
+#define T_VLC_HW_D3D11                 T_("VLC.HW.D3D11")
+#define T_VLC_HW_NONE                  T_("VLC.HW.NONE")
+#define T_VLC_SKIP_B_FRAMES	           T_("VLC.SkipBFrames")
 #define T_SL_ENABLE                    T_("Streamlink.Enable")
 #define T_SL_URL                       T_("Streamlink.URL")
 #define T_SL_TWITCH_LOW_LATENCY        T_("Streamlink.TwitchLowLatency")
@@ -821,8 +821,8 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	vlc_config.subtitle_enable = obs_data_get_bool(settings, S_SUBTITLE_ENABLE);
 	vlc_config.subtitle_index =(int)obs_data_get_int(settings, S_SUBTITLE_TRACK);
 
-	vlc_config.hw_value = obs_data_get_string(settings, S_HW);
-	vlc_config.skip_b_frames = obs_data_get_bool(settings, S_SKIP_B_FRAMES);
+	vlc_config.hw_value = obs_data_get_string(settings, S_VLC_HW);
+	vlc_config.skip_b_frames = obs_data_get_bool(settings, S_VLC_SKIP_B_FRAMES);
 
 	vlc_config.streamlink_enable = obs_data_get_bool(settings, S_SL_ENABLE);
 	vlc_config.quality = obs_data_get_string(settings, S_SLQ);
@@ -1253,8 +1253,8 @@ static void vlcs_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, S_SL_SHOW_CMD, false);
 	obs_data_set_default_string(settings, S_SLQ, S_SLQ_BEST);
 	obs_data_set_default_string(settings, S_SL_REST_OPTIONS, "");
-	obs_data_set_default_string(settings, S_HW, S_HW_NONE);
-	obs_data_set_default_bool(settings, S_SKIP_B_FRAMES, false);
+	obs_data_set_default_string(settings, S_VLC_HW, S_VLC_HW_NONE);
+	obs_data_set_default_bool(settings, S_VLC_SKIP_B_FRAMES, false);
 }
 
 static obs_properties_t *vlcs_properties(void *data)
@@ -1306,13 +1306,13 @@ static obs_properties_t *vlcs_properties(void *data)
 		obs_properties_add_group(root_ppts, S_SL_ENABLE, T_SL_ENABLE, OBS_GROUP_CHECKABLE, streamlink_group_ppts);
 	}
 
-	p = obs_properties_add_list(root_ppts, S_HW, T_HW, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(p, T_HW_ANY, S_HW_ANY);
-	obs_property_list_add_string(p, T_HW_DXVA2, S_HW_DXVA2);
-	obs_property_list_add_string(p, T_HW_D3D11, S_HW_D3D11);
-	obs_property_list_add_string(p, T_HW_NONE, S_HW_NONE);
+	p = obs_properties_add_list(root_ppts, S_VLC_HW, T_VLC_HW, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(p, T_VLC_HW_ANY, S_VLC_HW_ANY);
+	obs_property_list_add_string(p, T_VLC_HW_DXVA2, S_VLC_HW_DXVA2);
+	obs_property_list_add_string(p, T_VLC_HW_D3D11, S_VLC_HW_D3D11);
+	obs_property_list_add_string(p, T_VLC_HW_NONE, S_VLC_HW_NONE);
 
-	obs_properties_add_bool(root_ppts, S_SKIP_B_FRAMES, T_SKIP_B_FRAMES);
+	obs_properties_add_bool(root_ppts, S_VLC_SKIP_B_FRAMES, T_VLC_SKIP_B_FRAMES);
 
 	dstr_cat(&filter, "Media Files (");
 	dstr_copy(&exts, EXTENSIONS_MEDIA);
