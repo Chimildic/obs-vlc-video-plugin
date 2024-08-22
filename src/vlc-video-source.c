@@ -75,6 +75,7 @@
 struct media_file_data {
 	char *path;
 	libvlc_media_t *media;
+	PROCESS_INFORMATION process_information;
 };
 
 typedef DARRAY(struct media_file_data) media_file_array_t;
@@ -106,9 +107,6 @@ struct vlc_source {
 	obs_hotkey_id stop_hotkey;
 	obs_hotkey_id playlist_next_hotkey;
 	obs_hotkey_id playlist_prev_hotkey;
-
-	PROCESS_INFORMATION process_information;
-	char *server_url;
 };
 
 static bool is_streamlink_available = false;
@@ -157,11 +155,19 @@ static PROCESS_INFORMATION create_process(const char *command)
 	return pi;
 }
 
-static void terminate_process(PROCESS_INFORMATION pi) {
+static void terminate_process(PROCESS_INFORMATION pi)
+{
 	if (pi.hProcess != NULL) {
 		TerminateProcess(pi.hProcess, 0);
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
+	}
+}
+
+static void terminate_process_array(media_file_array_t *files)
+{
+	for (size_t i = 0; i < files->num; i++) {
+		terminate_process(files->array[i].process_information);
 	}
 }
 
@@ -463,7 +469,7 @@ static const char *vlcs_get_name(void *unused)
 static void vlcs_destroy(void *data)
 {
 	struct vlc_source *c = data;
-	terminate_process(c->process_information);
+	terminate_process_array(&(c->files));
 
 	if (c->media_list_player) {
 		libvlc_media_list_player_stop_(c->media_list_player);
@@ -645,19 +651,19 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 	return 0;
 }
 
-static void run_streamlink_server(struct vlc_source *c, const char *url, const char *quality)
+static void run_streamlink_server(struct media_file_data *data, const char *url, const char *quality)
 {
 	char command[4096];
 	char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p", quality);
 	int port = get_free_port();
 	snprintf(command, sizeof(command), "streamlink %s \"%s\" --player-continuous-http --player-external-http --player-external-http-port %d", url, fallback_quality, port);
 
-	terminate_process(c->process_information);
-	c->process_information = create_process(command);
+	terminate_process(data->process_information);
+	data->process_information = create_process(command);
 
 	char server_url[25];
 	snprintf(server_url, sizeof(server_url), "http://127.0.0.1:%d/", port);
-	c->server_url = server_url;
+	data->path = server_url;
 }
 
 static void add_file(struct vlc_source *c, media_file_array_t *new_files,
@@ -666,7 +672,7 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 		     const char *quality, const char *hw_value,
 		     bool skip_b_frames)
 {
-	struct media_file_data data;
+	struct media_file_data data = {0};
 	struct dstr new_path = {0};
 	libvlc_media_t *new_media;
 	bool is_url = path && strstr(path, "://") != NULL;
@@ -676,10 +682,10 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 	if (!is_url)
 		dstr_replace(&new_path, "/", "\\");
 #endif
-	if (is_streamlink_available)
+	if (is_url && is_streamlink_available) 
 	{
-		run_streamlink_server(c, new_path.array, quality);
-		dstr_copy(&new_path, c->server_url);
+		run_streamlink_server(&data, new_path.array, quality);
+		dstr_copy(&new_path, data.path);
 	}
 	path = new_path.array;
 	new_media = get_media(&c->files, path);
@@ -900,6 +906,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	/* ------------------------------------- */
 	/* clean up and restart playback */
 
+	terminate_process_array(&old_files);
 	free_files(&old_files);
 
 	media_list = libvlc_media_list_new_(libvlc);
