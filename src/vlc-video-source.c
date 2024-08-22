@@ -13,6 +13,7 @@
 
 /* clang-format off */
 
+#define S_VLC_GROUP                    "vlc_group"
 #define S_PLAYLIST                     "playlist"
 #define S_LOOP                         "loop"
 #define S_SHUFFLE                      "shuffle"
@@ -30,6 +31,11 @@
 #define S_HW_D3D11                     "d3d11va"
 #define S_HW_NONE                      "none"
 #define S_SKIP_B_FRAMES	               "skip_b_frames"
+#define S_SL_ENABLE                    "streamlink_enable"
+#define S_SL_URL                       "streamlink_url"
+#define S_SL_TWITCH_LOW_LATENCY        "streamlink_twitch_low_latency"
+#define S_SL_TWITCH_DISABLE_ADS        "streamlink_twitch_disable_ads"
+#define S_SL_SHOW_CMD                  "streamlink_show_cmd"
 #define S_SLQ                          "streamlink_quality"
 #define S_SLQ_BEST                     "best"
 #define S_SLQ_WORST                    "worst"
@@ -39,8 +45,10 @@
 #define S_SLQ_480P                     "480p"
 #define S_SLQ_360P                     "360p"
 #define S_SLQ_160P                     "160p"
+#define S_SL_REST_OPTIONS              "rest_options"
 
 #define T_(text) obs_module_text(text)
+#define T_VLC_GROUP                    T_("VLCGroup")
 #define T_PLAYLIST                     T_("Playlist")
 #define T_LOOP                         T_("LoopPlaylist")
 #define T_SHUFFLE                      T_("Shuffle")
@@ -58,15 +66,22 @@
 #define T_HW_D3D11                     T_("HardwareAcceleration.D3D11")
 #define T_HW_NONE                      T_("HardwareAcceleration.NONE")
 #define T_SKIP_B_FRAMES	               T_("SKIP_B_FRAMES")
-#define T_SLQ                          T_("StreamlinkQuality")
-#define T_SLQ_BEST                     T_("StreamlinkQuality.Best")
-#define T_SLQ_WORST                    T_("StreamlinkQuality.Worst")
-#define T_SLQ_AUDIO                    T_("StreamlinkQuality.AudioOnly")
+#define T_SL_ENABLE                    T_("Streamlink.Enable")
+#define T_SL_URL                       T_("Streamlink.URL")
+#define T_SL_TWITCH_LOW_LATENCY        T_("Streamlink.TwitchLowLatency")
+#define T_SL_TWITCH_DISABLE_ADS        T_("Streamlink.TwitchDisableAds")
+#define T_SL_SHOW_CMD                  T_("Streamlink.ShowCMD")
+#define T_SLQ                          T_("Streamlink.Quality")
+#define T_SLQ_BEST                     T_("Streamlink.Quality.Best")
+#define T_SLQ_WORST                    T_("Streamlink.Quality.Worst")
+#define T_SLQ_AUDIO                    T_("Streamlink.Quality.AudioOnly")
 #define T_SLQ_1080P                    T_("1080p")
 #define T_SLQ_720P                     T_("720p")
 #define T_SLQ_480P                     T_("480p")
 #define T_SLQ_360P                     T_("360p")
 #define T_SLQ_160P                     T_("160p")
+#define T_SL_REST_OPTIONS              T_("Streamlink.RestOptions")
+#define T_SL_REST_OPTIONS_DESCRIPTION  T_("Streamlink.RestOptions.Description")
 
 /* clang-format on */
 
@@ -119,7 +134,8 @@ void toLowerCase(char *str)
 	}
 }
 
-static void detect_streamlink() {
+static void detect_streamlink()
+{
 	char *env_path = getenv("PATH");
 	toLowerCase(env_path);
 	is_streamlink_available = strstr(env_path, "streamlink") != NULL;
@@ -133,7 +149,7 @@ static wchar_t *convertCharArrayToLPCWSTR(const char *charArray)
 	return lpwstr;
 }
 
-static PROCESS_INFORMATION create_process(const char *command)
+static PROCESS_INFORMATION create_process(const char *command, bool show_cmd)
 {
 	PROCESS_INFORMATION pi;
 	STARTUPINFO si;
@@ -147,7 +163,7 @@ static PROCESS_INFORMATION create_process(const char *command)
 	si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
 
 	wchar_t *lpcwstr_command = convertCharArrayToLPCWSTR(command);
-	if (!CreateProcess(NULL, lpcwstr_command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+	if (!CreateProcess(NULL, lpcwstr_command, NULL, NULL, TRUE, show_cmd ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
 		WaitForSingleObject(pi.hProcess, INFINITE);
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
@@ -181,7 +197,7 @@ static int get_free_port()
 	if (sockfd == -1) {
 		return -1;
 	}
-	
+
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
@@ -651,15 +667,37 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 	return 0;
 }
 
-static void run_streamlink_server(struct media_file_data *data, const char *url, const char *quality)
+static void run_streamlink_server(struct media_file_data *data, const char *url,
+				  bool streamlink_twitch_low_latency,
+				  bool streamlink_twitch_disable_ads,
+				  bool streamlink_show_cmd,
+				  const char *quality,
+				  const char *streamlink_rest_options)
 {
-	char command[4096];
-	char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p", quality);
-	int port = get_free_port();
-	snprintf(command, sizeof(command), "streamlink %s \"%s\" --player-continuous-http --player-external-http --player-external-http-port %d", url, fallback_quality, port);
+	char command[16384] = "streamlink --player-external-http";
+	if (strstr(streamlink_rest_options, "--url") == NULL) {
+		strcat(command, " --url ");
+		strcat(command, url);
+	}
+	if (strstr(streamlink_rest_options, "--default-stream") == NULL) {
+		char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p", quality);
+		strcat(command, " --default-stream ");
+		strcat(command, fallback_quality);
+	}
+	int port;
+	const char *port_option = strstr(streamlink_rest_options, "--player-external-http-port");
+	if (port_option == NULL) {
+		port = get_free_port();
+		snprintf(command, sizeof(command), "%s --player-external-http-port %d", command, port);
+	} else {
+		port = atoi(&port_option[sizeof("--player-external-http-port")]);
+	}
+	streamlink_twitch_low_latency && strcat(command, " --twitch-low-latency");
+	streamlink_twitch_disable_ads && strcat(command, " --twitch-disable-ads");
+	snprintf(command, sizeof(command), "%s %s", command, streamlink_rest_options);
 
 	terminate_process(data->process_information);
-	data->process_information = create_process(command);
+	data->process_information = create_process(command, streamlink_show_cmd);
 
 	char server_url[25];
 	snprintf(server_url, sizeof(server_url), "http://127.0.0.1:%d/", port);
@@ -669,8 +707,10 @@ static void run_streamlink_server(struct media_file_data *data, const char *url,
 static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 		     const char *path, int network_caching, int track_index,
 		     int subtitle_index, bool subtitle_enable,
-		     const char *quality, const char *hw_value,
-		     bool skip_b_frames)
+		     bool streamlink_enable, bool streamlink_twitch_low_latency,
+	             bool streamlink_twitch_disable_ads, const char *streamlink_rest_options, const char *quality,
+		     const char *hw_value, bool skip_b_frames,
+		     bool streamlink_show_cmd)
 {
 	struct media_file_data data = {0};
 	struct dstr new_path = {0};
@@ -682,9 +722,12 @@ static void add_file(struct vlc_source *c, media_file_array_t *new_files,
 	if (!is_url)
 		dstr_replace(&new_path, "/", "\\");
 #endif
-	if (is_url && is_streamlink_available) 
-	{
-		run_streamlink_server(&data, new_path.array, quality);
+	if (is_url && is_streamlink_available && streamlink_enable) {
+		run_streamlink_server(&data, new_path.array,
+				      streamlink_twitch_low_latency,
+				      streamlink_twitch_disable_ads,
+				      streamlink_show_cmd, quality,
+				      streamlink_rest_options);
 		dstr_copy(&new_path, data.path);
 	}
 	path = new_path.array;
@@ -770,42 +813,29 @@ static void vlcs_update(void *data, obs_data_t *settings)
 {
 	media_file_array_t new_files;
 	media_file_array_t old_files;
-	libvlc_media_list_t *media_list;
-	struct vlc_source *c = data;
-	obs_data_array_t *array;
-	const char *behavior;
-	const char *quality;
-	const char *hw_value;
-	size_t count;
-	int network_caching;
-	int track_index;
-	int subtitle_index;
-	bool subtitle_enable;
-	bool skip_b_frames;
 
 	da_init(new_files);
 	da_init(old_files);
 
-	array = obs_data_get_array(settings, S_PLAYLIST);
-	count = obs_data_array_count(array);
-
+	struct vlc_source *c = data;
 	c->loop = obs_data_get_bool(settings, S_LOOP);
 
-	behavior = obs_data_get_string(settings, S_BEHAVIOR);
-
-	network_caching = (int)obs_data_get_int(settings, S_NETWORK_CACHING);
-
-	track_index = (int)obs_data_get_int(settings, S_TRACK);
-
-	subtitle_index = (int)obs_data_get_int(settings, S_SUBTITLE_TRACK);
-
-	subtitle_enable = obs_data_get_bool(settings, S_SUBTITLE_ENABLE);
-
-	quality = obs_data_get_string(settings, S_SLQ);
-
-	hw_value = obs_data_get_string(settings, S_HW);
-
-	skip_b_frames = obs_data_get_bool(settings, S_SKIP_B_FRAMES);
+	obs_data_array_t *array = obs_data_get_array(settings, S_PLAYLIST);
+	size_t count = obs_data_array_count(array);
+	const char *behavior = obs_data_get_string(settings, S_BEHAVIOR);
+	int network_caching = (int)obs_data_get_int(settings, S_NETWORK_CACHING);
+	int track_index = (int)obs_data_get_int(settings, S_TRACK);
+	int subtitle_index = (int)obs_data_get_int(settings, S_SUBTITLE_TRACK);
+	bool subtitle_enable = obs_data_get_bool(settings, S_SUBTITLE_ENABLE);
+	const char *quality = obs_data_get_string(settings, S_SLQ);
+	const char *hw_value = obs_data_get_string(settings, S_HW);
+	bool skip_b_frames = obs_data_get_bool(settings, S_SKIP_B_FRAMES);
+	bool streamlink_enable = obs_data_get_bool(settings, S_SL_ENABLE);
+	const char *streamlink_url = obs_data_get_string(settings, S_SL_URL);
+	bool streamlink_twitch_low_latency_enable = obs_data_get_bool(settings, S_SL_TWITCH_LOW_LATENCY);
+	bool streamlink_twitch_disable_ads = obs_data_get_bool(settings, S_SL_TWITCH_DISABLE_ADS);
+	bool streamlink_show_cmd = obs_data_get_bool(settings, S_SL_SHOW_CMD);
+	const char *streamlink_rest_options = obs_data_get_string(settings, S_SL_REST_OPTIONS);
 
 	if (astrcmpi(behavior, S_BEHAVIOR_PAUSE_UNPAUSE) == 0) {
 		c->behavior = BEHAVIOR_PAUSE_UNPAUSE;
@@ -818,7 +848,14 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	/* ------------------------------------- */
 	/* create new list of sources */
 
-	for (size_t i = 0; i < count; i++) {
+	if (strlen(streamlink_url) != 0) {
+		add_file(c, &new_files, streamlink_url, network_caching, track_index,
+			 subtitle_index, subtitle_enable, streamlink_enable,
+			 streamlink_twitch_low_latency_enable,
+			 streamlink_twitch_disable_ads, streamlink_rest_options,
+			 quality, hw_value, skip_b_frames, streamlink_show_cmd);
+	} else {
+		for (size_t i = 0; i < count; i++) {
 		obs_data_t *item = obs_data_array_item(array, i);
 		const char *path = obs_data_get_string(item, "value");
 		if (!path || !*path) {
@@ -850,7 +887,10 @@ static void vlcs_update(void *data, obs_data_t *settings)
 				add_file(c, &new_files, dir_path.array,
 					 network_caching, track_index,
 					 subtitle_index, subtitle_enable,
-					 quality, hw_value, skip_b_frames);
+					 streamlink_enable, streamlink_twitch_low_latency_enable,
+					 streamlink_twitch_disable_ads, streamlink_rest_options, quality,
+					 hw_value, skip_b_frames,
+					 streamlink_show_cmd);
 			}
 
 			dstr_free(&dir_path);
@@ -858,11 +898,16 @@ static void vlcs_update(void *data, obs_data_t *settings)
 		} else {
 			add_file(c, &new_files, path, network_caching,
 				 track_index, subtitle_index, subtitle_enable,
-				 quality, hw_value, skip_b_frames);
+				 streamlink_enable, streamlink_twitch_low_latency_enable,
+				 streamlink_twitch_disable_ads, streamlink_rest_options, quality, hw_value,
+				 skip_b_frames, streamlink_show_cmd);
 		}
 
-		obs_data_release(item);
+			obs_data_release(item);
+		}
+
 	}
+
 
 	/* ------------------------------------- */
 	/* update settings data */
@@ -909,7 +954,7 @@ static void vlcs_update(void *data, obs_data_t *settings)
 	terminate_process_array(&old_files);
 	free_files(&old_files);
 
-	media_list = libvlc_media_list_new_(libvlc);
+	libvlc_media_list_t *media_list = libvlc_media_list_new_(libvlc);
 
 	libvlc_media_list_lock_(media_list);
 	for (size_t i = 0; i < c->files.num; i++)
@@ -1225,22 +1270,27 @@ static void vlcs_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, S_SUBTITLE_ENABLE, false);
 	obs_data_set_default_int(settings, S_SUBTITLE_TRACK, 1);
 
+	obs_data_set_default_bool(settings, S_SL_ENABLE, false);
+	obs_data_set_default_string(settings, S_SL_URL, "https://www.twitch.tv/igorghk");
+	obs_data_set_default_bool(settings, S_SL_TWITCH_LOW_LATENCY, false);
+	obs_data_set_default_bool(settings, S_SL_TWITCH_DISABLE_ADS, false);
+	obs_data_set_default_bool(settings, S_SL_SHOW_CMD, false);
 	obs_data_set_default_string(settings, S_SLQ, S_SLQ_BEST);
+	obs_data_set_default_string(settings, S_SL_REST_OPTIONS, "");
 	obs_data_set_default_string(settings, S_HW, S_HW_NONE);
 	obs_data_set_default_bool(settings, S_SKIP_B_FRAMES, false);
 }
 
 static obs_properties_t *vlcs_properties(void *data)
 {
-	obs_properties_t *ppts = obs_properties_create();
+	obs_properties_t *root_ppts = obs_properties_create();
 	struct vlc_source *c = data;
 	struct dstr filter = {0};
 	struct dstr exts = {0};
 	struct dstr path = {0};
 	obs_property_t *p;
 
-	obs_properties_set_flags(ppts, OBS_PROPERTIES_DEFER_UPDATE);
-	obs_properties_add_bool(ppts, S_LOOP, T_LOOP);
+	obs_properties_set_flags(root_ppts, OBS_PROPERTIES_DEFER_UPDATE);
 
 	if (c) {
 		pthread_mutex_lock(&c->mutex);
@@ -1257,13 +1307,12 @@ static obs_properties_t *vlcs_properties(void *data)
 		pthread_mutex_unlock(&c->mutex);
 	}
 
-	p = obs_properties_add_list(ppts, S_BEHAVIOR, T_BEHAVIOR, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(p, T_BEHAVIOR_STOP_RESTART, S_BEHAVIOR_STOP_RESTART);
-	obs_property_list_add_string(p, T_BEHAVIOR_PAUSE_UNPAUSE, S_BEHAVIOR_PAUSE_UNPAUSE);
-	obs_property_list_add_string(p, T_BEHAVIOR_ALWAYS_PLAY, S_BEHAVIOR_ALWAYS_PLAY);
-
 	if (is_streamlink_available) {
-		p = obs_properties_add_list(ppts, S_SLQ, T_SLQ, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+		obs_properties_t *streamlink_group_ppts = obs_properties_create();
+
+		obs_properties_add_text(streamlink_group_ppts, S_SL_URL, T_SL_URL, OBS_TEXT_DEFAULT);
+
+		p = obs_properties_add_list(streamlink_group_ppts, S_SLQ, T_SLQ, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 		obs_property_list_add_string(p, T_SLQ_BEST, S_SLQ_BEST);
 		obs_property_list_add_string(p, T_SLQ_1080P, S_SLQ_1080P);
 		obs_property_list_add_string(p, T_SLQ_720P, S_SLQ_720P);
@@ -1271,15 +1320,23 @@ static obs_properties_t *vlcs_properties(void *data)
 		obs_property_list_add_string(p, T_SLQ_360P, S_SLQ_360P);
 		obs_property_list_add_string(p, T_SLQ_160P, S_SLQ_160P);
 		obs_property_list_add_string(p, T_SLQ_WORST, S_SLQ_WORST);
+
+		p = obs_properties_add_text(streamlink_group_ppts, S_SL_REST_OPTIONS, T_SL_REST_OPTIONS, OBS_TEXT_DEFAULT);
+
+		obs_properties_add_bool(streamlink_group_ppts, S_SL_TWITCH_LOW_LATENCY, T_SL_TWITCH_LOW_LATENCY);
+		obs_properties_add_bool(streamlink_group_ppts, S_SL_TWITCH_DISABLE_ADS, T_SL_TWITCH_DISABLE_ADS);
+		obs_properties_add_bool(streamlink_group_ppts, S_SL_SHOW_CMD, T_SL_SHOW_CMD);
+
+		obs_properties_add_group(root_ppts, S_SL_ENABLE, T_SL_ENABLE, OBS_GROUP_CHECKABLE, streamlink_group_ppts);
 	}
 
-	p = obs_properties_add_list(ppts, S_HW, T_HW, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	p = obs_properties_add_list(root_ppts, S_HW, T_HW, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(p, T_HW_ANY, S_HW_ANY);
 	obs_property_list_add_string(p, T_HW_DXVA2, S_HW_DXVA2);
 	obs_property_list_add_string(p, T_HW_D3D11, S_HW_D3D11);
 	obs_property_list_add_string(p, T_HW_NONE, S_HW_NONE);
 
-	obs_properties_add_bool(ppts, S_SKIP_B_FRAMES, T_SKIP_B_FRAMES);
+	obs_properties_add_bool(root_ppts, S_SKIP_B_FRAMES, T_SKIP_B_FRAMES);
 
 	dstr_cat(&filter, "Media Files (");
 	dstr_copy(&exts, EXTENSIONS_MEDIA);
@@ -1302,22 +1359,31 @@ static obs_properties_t *vlcs_properties(void *data)
 	dstr_cat_dstr(&filter, &exts);
 	dstr_cat(&filter, ")");
 
-	obs_properties_add_editable_list(ppts, S_PLAYLIST, T_PLAYLIST, OBS_EDITABLE_LIST_TYPE_FILES_AND_URLS, filter.array, path.array);
+	obs_properties_t *vlc_group_ppts = obs_properties_create();
 
-	obs_properties_add_bool(ppts, S_SHUFFLE, T_SHUFFLE);
-
+	obs_properties_add_editable_list(vlc_group_ppts, S_PLAYLIST, T_PLAYLIST, OBS_EDITABLE_LIST_TYPE_FILES_AND_URLS, filter.array, path.array);
 	dstr_free(&path);
 	dstr_free(&filter);
 	dstr_free(&exts);
 
-	p = obs_properties_add_int(ppts, S_NETWORK_CACHING, T_NETWORK_CACHING, 100, 60000, 10);
+	obs_properties_add_bool(vlc_group_ppts, S_LOOP, T_LOOP);
+	obs_properties_add_bool(vlc_group_ppts, S_SHUFFLE, T_SHUFFLE);
+
+	p = obs_properties_add_list(vlc_group_ppts, S_BEHAVIOR, T_BEHAVIOR, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(p, T_BEHAVIOR_STOP_RESTART, S_BEHAVIOR_STOP_RESTART);
+	obs_property_list_add_string(p, T_BEHAVIOR_PAUSE_UNPAUSE, S_BEHAVIOR_PAUSE_UNPAUSE);
+	obs_property_list_add_string(p, T_BEHAVIOR_ALWAYS_PLAY, S_BEHAVIOR_ALWAYS_PLAY);
+
+	p = obs_properties_add_int(vlc_group_ppts, S_NETWORK_CACHING, T_NETWORK_CACHING, 100, 60000, 10);
 	obs_property_int_set_suffix(p, " ms");
 
-	obs_properties_add_int(ppts, S_TRACK, T_TRACK, 1, 10, 1);
-	obs_properties_add_bool(ppts, S_SUBTITLE_ENABLE, T_SUBTITLE_ENABLE);
-	obs_properties_add_int(ppts, S_SUBTITLE_TRACK, T_SUBTITLE_TRACK, 1, 1000, 1);
+	obs_properties_add_int(vlc_group_ppts, S_TRACK, T_TRACK, 1, 10, 1);
+	obs_properties_add_bool(vlc_group_ppts, S_SUBTITLE_ENABLE, T_SUBTITLE_ENABLE);
+	obs_properties_add_int(vlc_group_ppts, S_SUBTITLE_TRACK, T_SUBTITLE_TRACK, 1, 1000, 1);
 
-	return ppts;
+	obs_properties_add_group(root_ppts, S_VLC_GROUP, T_VLC_GROUP, OBS_GROUP_NORMAL, vlc_group_ppts);
+
+	return root_ppts;
 }
 
 static void missing_file_callback(void *src, const char *new_path, void *data)
