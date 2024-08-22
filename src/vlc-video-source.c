@@ -1335,14 +1335,6 @@ static obs_properties_t *vlcs_properties(void *data)
 		obs_properties_add_group(root_ppts, S_SL_ENABLE, T_SL_ENABLE, OBS_GROUP_CHECKABLE, streamlink_group_ppts);
 	}
 
-	p = obs_properties_add_list(root_ppts, S_VLC_HW, T_VLC_HW, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(p, T_VLC_HW_ANY, S_VLC_HW_ANY);
-	obs_property_list_add_string(p, T_VLC_HW_DXVA2, S_VLC_HW_DXVA2);
-	obs_property_list_add_string(p, T_VLC_HW_D3D11, S_VLC_HW_D3D11);
-	obs_property_list_add_string(p, T_VLC_HW_NONE, S_VLC_HW_NONE);
-
-	obs_properties_add_bool(root_ppts, S_VLC_SKIP_B_FRAMES, T_VLC_SKIP_B_FRAMES);
-
 	dstr_cat(&filter, "Media Files (");
 	dstr_copy(&exts, EXTENSIONS_MEDIA);
 	dstr_replace(&exts, ";", " ");
@@ -1365,6 +1357,14 @@ static obs_properties_t *vlcs_properties(void *data)
 	dstr_cat(&filter, ")");
 
 	obs_properties_t *vlc_group_ppts = obs_properties_create();
+
+	p = obs_properties_add_list(vlc_group_ppts, S_VLC_HW, T_VLC_HW, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(p, T_VLC_HW_ANY, S_VLC_HW_ANY);
+	obs_property_list_add_string(p, T_VLC_HW_DXVA2, S_VLC_HW_DXVA2);
+	obs_property_list_add_string(p, T_VLC_HW_D3D11, S_VLC_HW_D3D11);
+	obs_property_list_add_string(p, T_VLC_HW_NONE, S_VLC_HW_NONE);
+
+	obs_properties_add_bool(vlc_group_ppts, S_VLC_SKIP_B_FRAMES, T_VLC_SKIP_B_FRAMES);
 
 	obs_properties_add_editable_list(vlc_group_ppts, S_PLAYLIST, T_PLAYLIST, OBS_EDITABLE_LIST_TYPE_FILES_AND_URLS, filter.array, path.array);
 	dstr_free(&path);
