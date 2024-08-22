@@ -47,6 +47,7 @@
 #define S_SLQ_360P                     "360p"
 #define S_SLQ_160P                     "160p"
 #define S_SL_REST_OPTIONS              "streamlink_rest_options"
+#define S_GITHUB_BUTTON                "github_button"
 
 #define T_(text) obs_module_text(text)
 #define T_VLC_GROUP                    T_("VLCGroup")
@@ -87,6 +88,7 @@
 #define T_SLQ_160P                     T_("160p")
 #define T_SL_REST_OPTIONS              T_("Streamlink.RestOptions")
 #define T_SL_REST_OPTIONS_DESCRIPTION  T_("Streamlink.RestOptions.Description")
+#define T_GITHUB_BUTTON                T_("Открыть GitHub")
 
 /* clang-format on */
 
@@ -240,6 +242,12 @@ static int get_free_port()
 	int free_port = ntohs(addr.sin_port);
 	closesocket(sockfd);
 	return free_port;
+}
+
+static bool github_button_clicked(obs_properties_t *props, obs_property_t *property, void *data)
+{
+	ShellExecute(0, 0, L"https://github.com/Chimildic/obs-vlc-video-plugin", 0, 0 , SW_SHOW );
+	return true;
 }
 
 static libvlc_media_t *get_media(media_file_array_t *files, const char *path)
@@ -1381,6 +1389,8 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_property_set_long_description(p, T_VLC_REST_OPTIONS_DESCRIPTION);
 
 	obs_properties_add_group(root_ppts, S_VLC_GROUP, T_VLC_GROUP, OBS_GROUP_NORMAL, vlc_group_ppts);
+
+	obs_properties_add_button(root_ppts, S_GITHUB_BUTTON, T_GITHUB_BUTTON, github_button_clicked);
 
 	return root_ppts;
 }
