@@ -701,7 +701,7 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 
 static void run_streamlink_server(struct media_file_data *data, const char *url, struct vlc_config *config)
 {
-	char command[4096] = "streamlink --player-external-http";
+	char command[4096] = "streamlink --player-external-http --player-external-http-interface 127.0.0.1";
 	if (strstr(config->streamlink_rest_options, "--url") == NULL) {
 		strcat(command, " --url ");
 		strcat(command, url);
