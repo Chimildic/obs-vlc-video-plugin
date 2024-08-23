@@ -707,7 +707,7 @@ static void run_streamlink_server(struct media_file_data *data, const char *url,
 		strcat(command, url);
 	}
 	if (strstr(config->streamlink_rest_options, "--default-stream") == NULL) {
-		char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p", config->quality);
+		char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p,worst", config->quality);
 		strcat(command, " --default-stream ");
 		strcat(command, fallback_quality);
 	}
