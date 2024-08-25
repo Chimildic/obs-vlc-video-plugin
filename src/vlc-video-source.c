@@ -5,9 +5,9 @@
 #include <util/dstr.h>
 #include <Windows.h>
 
-#define do_log(level, format, ...)                \
+#define do_log(level, format, ...)            \
 	blog(level, "[vlc_source: '%s'] " format, \
-	     obs_source_get_name(ss->source), ##__VA_ARGS__)
+		 obs_source_get_name(ss->source), ##__VA_ARGS__)
 
 #define warn(format, ...) do_log(LOG_WARNING, format, ##__VA_ARGS__)
 
@@ -17,10 +17,7 @@
 #define S_PLAYLIST                     "playlist"
 #define S_LOOP                         "loop"
 #define S_SHUFFLE                      "shuffle"
-#define S_BEHAVIOR                     "playback_behavior"
-#define S_BEHAVIOR_STOP_RESTART        "stop_restart"
-#define S_BEHAVIOR_PAUSE_UNPAUSE       "pause_unpause"
-#define S_BEHAVIOR_ALWAYS_PLAY         "always_play"
+#define S_BEHAVIOR                     "playback_behavior_int"
 #define S_NETWORK_CACHING              "network_caching"
 #define S_TRACK                        "track"
 #define S_SUBTITLE_ENABLE              "subtitle_enable"
@@ -99,7 +96,8 @@
 
 /* ------------------------------------------------------------------------- */
 
-struct media_file_data {
+struct media_file_data
+{
 	char *path;
 	libvlc_media_t *media;
 	PROCESS_INFORMATION process_information;
@@ -107,36 +105,43 @@ struct media_file_data {
 
 typedef DARRAY(struct media_file_data) media_file_array_t;
 
-enum behavior {
+enum behavior
+{
 	BEHAVIOR_STOP_RESTART,
 	BEHAVIOR_PAUSE_UNPAUSE,
 	BEHAVIOR_ALWAYS_PLAY,
 };
 
-struct vlc_config {
+struct vlc_config
+{
 	int network_caching;
 	int track_index;
 	int subtitle_index;
 	bool subtitle_enable;
-
-	const char *hw_value;
+	char *hw_value;
 	bool skip_b_frames;
-	const char *vlc_rest_options;
+	char *rest_options;
+};
 
-	bool streamlink_enable;
-	const char *streamlink_url;
-	const char *quality;
+struct streamlink_config
+{
+	bool enable;
+	char *url;
+	char *quality;
 	bool twitch_low_latency_enable;
 	bool twitch_disable_ads;
 	bool show_cmd;
-	const char *streamlink_rest_options;
+	char *rest_options;
 };
 
 typedef struct vlc_config vlc_config_t;
+typedef struct streamlink_config streamlink_config_t;
 
-struct vlc_source {
+struct vlc_source
+{
 	obs_source_t *source;
-	vlc_config_t config;
+	vlc_config_t vlc_config;
+	streamlink_config_t streamlink_config;
 
 	libvlc_media_player_t *media_player;
 	libvlc_media_list_player_t *media_list_player;
@@ -162,7 +167,8 @@ static bool is_streamlink_available = false;
 
 void toLowerCase(char *str)
 {
-	while (*str) {
+	while (*str)
+	{
 		*str = tolower((unsigned char)*str);
 		str++;
 	}
@@ -197,7 +203,8 @@ static PROCESS_INFORMATION create_process(const char *command, bool show_cmd)
 	si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
 
 	wchar_t *lpcwstr_command = convertCharArrayToLPCWSTR(command);
-	if (!CreateProcess(NULL, lpcwstr_command, NULL, NULL, TRUE, show_cmd ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+	if (!CreateProcess(NULL, lpcwstr_command, NULL, NULL, TRUE, show_cmd ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+	{
 		WaitForSingleObject(pi.hProcess, INFINITE);
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
@@ -207,7 +214,8 @@ static PROCESS_INFORMATION create_process(const char *command, bool show_cmd)
 
 static void terminate_process(PROCESS_INFORMATION pi)
 {
-	if (pi.hProcess != NULL) {
+	if (pi.hProcess != NULL)
+	{
 		TerminateProcess(pi.hProcess, 0);
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
@@ -216,7 +224,8 @@ static void terminate_process(PROCESS_INFORMATION pi)
 
 static void terminate_process_array(media_file_array_t *files)
 {
-	for (size_t i = 0; i < files->num; i++) {
+	for (size_t i = 0; i < files->num; i++)
+	{
 		terminate_process(files->array[i].process_information);
 	}
 }
@@ -228,7 +237,8 @@ static int get_free_port()
 	int addr_len = sizeof(addr);
 
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd == -1) {
+	if (sockfd == -1)
+	{
 		return -1;
 	}
 
@@ -237,12 +247,14 @@ static int get_free_port()
 	addr.sin_addr.s_addr = INADDR_ANY;
 	addr.sin_port = htons(0);
 
-	if (bind(sockfd, (SOCKADDR*)&addr, sizeof(addr)) == -1) {
+	if (bind(sockfd, (SOCKADDR *)&addr, sizeof(addr)) == -1)
+	{
 		closesocket(sockfd);
 		return -1;
 	}
 
-	if (getsockname(sockfd, (SOCKADDR*)&addr, &addr_len) == -1) {
+	if (getsockname(sockfd, (SOCKADDR *)&addr, &addr_len) == -1)
+	{
 		closesocket(sockfd);
 		return -1;
 	}
@@ -254,11 +266,11 @@ static int get_free_port()
 
 static bool github_button_clicked(obs_properties_t *props, obs_property_t *property, void *data)
 {
-	ShellExecute(0, 0, L"https://github.com/Chimildic/obs-vlc-video-plugin", 0, 0 , SW_SHOW );
+	ShellExecute(0, 0, L"https://github.com/Chimildic/obs-vlc-video-plugin", 0, 0, SW_SHOW);
 	return true;
 }
 
-static bool audio_monitoring_changed(void *data, obs_properties_t* props, obs_property_t* list, obs_data_t* settings)
+static bool audio_monitoring_changed(void *data, obs_properties_t *props, obs_property_t *list, obs_data_t *settings)
 {
 	struct vlc_source *vlc_source = data;
 	int monitoring_type = (int)obs_data_get_int(settings, S_AM);
@@ -270,10 +282,12 @@ static libvlc_media_t *get_media(media_file_array_t *files, const char *path)
 {
 	libvlc_media_t *media = NULL;
 
-	for (size_t i = 0; i < files->num; i++) {
+	for (size_t i = 0; i < files->num; i++)
+	{
 		const char *cur_path = files->array[i].path;
 
-		if (strcmp(path, cur_path) == 0) {
+		if (strcmp(path, cur_path) == 0)
+		{
 			media = files->array[i].media;
 			libvlc_media_retain_(media);
 			break;
@@ -286,21 +300,36 @@ static libvlc_media_t *get_media(media_file_array_t *files, const char *path)
 static inline libvlc_media_t *create_media_from_file(const char *file)
 {
 	return (file && strstr(file, "://") != NULL)
-		       ? libvlc_media_new_location_(libvlc, file)
-		       : libvlc_media_new_path_(libvlc, file);
+			   ? libvlc_media_new_location_(libvlc, file)
+			   : libvlc_media_new_path_(libvlc, file);
+}
+
+static void replace_vlc_config(struct vlc_config *current_config, struct vlc_config *new_config)
+{
+	free(current_config->hw_value);
+	free(current_config->rest_options);
+	*current_config = *new_config;
+}
+
+static void replace_streamling_config(struct streamlink_config *current_config, struct streamlink_config *new_config)
+{
+	free(current_config->url);
+	free(current_config->quality);
+	free(current_config->rest_options);
+	*current_config = *new_config;
 }
 
 static void free_files(media_file_array_t *files)
 {
-	for (size_t i = 0; i < files->num; i++) {
+	for (size_t i = 0; i < files->num; i++)
+	{
 		bfree(files->array[i].path);
 		libvlc_media_release_(files->array[i].media);
 	}
-
 	da_free(*files);
 }
 
-#define MAKEFORMAT(ch0, ch1, ch2, ch3)                                \
+#define MAKEFORMAT(ch0, ch1, ch2, ch3)                            \
 	((uint32_t)(uint8_t)(ch0) | ((uint32_t)(uint8_t)(ch1) << 8) | \
 	 ((uint32_t)(uint8_t)(ch2) << 16) | ((uint32_t)(uint8_t)(ch3) << 24))
 
@@ -313,20 +342,23 @@ static enum video_format convert_vlc_video_format(char *chroma, bool *full)
 {
 	*full = false;
 
-#define CHROMA_TEST(val, ret)       \
+#define CHROMA_TEST(val, ret)   \
 	if (chroma_is(chroma, val)) \
 	return ret
-#define CHROMA_CONV(val, new_val, ret)                           \
-	do {                                                     \
-		if (chroma_is(chroma, val)) {                    \
+#define CHROMA_CONV(val, new_val, ret)               \
+	do                                               \
+	{                                                \
+		if (chroma_is(chroma, val))                  \
+		{                                            \
 			*(uint32_t *)chroma = (uint32_t)new_val; \
 			return ret;                              \
-		}                                                \
+		}                                            \
 	} while (false)
-#define CHROMA_CONV_FULL(val, new_val, ret)     \
-	do {                                    \
-		*full = true;                   \
-		CHROMA_CONV(val, new_val, ret); \
+#define CHROMA_CONV_FULL(val, new_val, ret) \
+	do                                      \
+	{                                       \
+		*full = true;                       \
+		CHROMA_CONV(val, new_val, ret);     \
 	} while (false)
 
 	CHROMA_TEST("RGBA", VIDEO_FORMAT_RGBA);
@@ -342,8 +374,7 @@ static enum video_format convert_vlc_video_format(char *chroma, bool *full)
 	CHROMA_CONV("YV12", MAKEFORMAT('N', 'V', '1', '2'), VIDEO_FORMAT_NV12);
 	CHROMA_CONV("yv12", MAKEFORMAT('N', 'V', '1', '2'), VIDEO_FORMAT_NV12);
 
-	CHROMA_CONV_FULL("J420", MAKEFORMAT('J', '4', '2', '0'),
-			 VIDEO_FORMAT_I420);
+	CHROMA_CONV_FULL("J420", MAKEFORMAT('J', '4', '2', '0'), VIDEO_FORMAT_I420);
 
 	/* 4:2:2 formats */
 	CHROMA_TEST("UYVY", VIDEO_FORMAT_UYVY);
@@ -377,8 +408,7 @@ static enum video_format convert_vlc_video_format(char *chroma, bool *full)
 
 	/* 4:4:4 formats */
 	CHROMA_TEST("I444", VIDEO_FORMAT_I444);
-	CHROMA_CONV_FULL("J444", MAKEFORMAT('R', 'G', 'B', 'A'),
-			 VIDEO_FORMAT_RGBA);
+	CHROMA_CONV_FULL("J444", MAKEFORMAT('R', 'G', 'B', 'A'), VIDEO_FORMAT_RGBA);
 	CHROMA_CONV("YUVA", MAKEFORMAT('R', 'G', 'B', 'A'), VIDEO_FORMAT_RGBA);
 
 	/* 4:4:0 formats */
@@ -405,10 +435,10 @@ static enum video_format convert_vlc_video_format(char *chroma, bool *full)
 	return VIDEO_FORMAT_BGRA;
 }
 
-static inline unsigned get_format_lines(enum video_format format,
-					unsigned height, size_t plane)
+static inline unsigned get_format_lines(enum video_format format, unsigned height, size_t plane)
 {
-	switch (format) {
+	switch (format)
+	{
 	case VIDEO_FORMAT_I420:
 	case VIDEO_FORMAT_NV12:
 		return (plane == 0) ? height : height / 2;
@@ -425,21 +455,22 @@ static inline unsigned get_format_lines(enum video_format format,
 	default:
 		break;
 	}
-
 	return 0;
 }
 
 static enum audio_format convert_vlc_audio_format(char *format)
 {
-#define AUDIO_TEST(val, ret)        \
+#define AUDIO_TEST(val, ret)    \
 	if (chroma_is(format, val)) \
 	return ret
-#define AUDIO_CONV(val, new_val, ret)                            \
-	do {                                                     \
-		if (chroma_is(format, val)) {                    \
+#define AUDIO_CONV(val, new_val, ret)                \
+	do                                               \
+	{                                                \
+		if (chroma_is(format, val))                  \
+		{                                            \
 			*(uint32_t *)format = (uint32_t)new_val; \
 			return ret;                              \
-		}                                                \
+		}                                            \
 	} while (false)
 
 	AUDIO_TEST("S16N", AUDIO_FORMAT_16BIT);
@@ -473,24 +504,26 @@ static void vlcs_get_metadata(void *data, calldata_t *cd)
 	const char *data_id = calldata_string(cd, "tag_id");
 
 	if (!vlcs || !data_id)
+	{
 		return;
-	libvlc_media_t *media =
-		libvlc_media_player_get_media_(vlcs->media_player);
+	}
 
+	libvlc_media_t *media = libvlc_media_player_get_media_(vlcs->media_player);
 	if (!media)
+	{
 		return;
+	}
 
-#define VLC_META(media, cd, did, tid, tag)                               \
-	else if (strcmp(did, tid) == 0)                                  \
-	{                                                                \
-		calldata_set_string(cd, "tag_data",                      \
-				    libvlc_media_get_meta_(media, tag)); \
+#define VLC_META(media, cd, did, tid, tag)                                       \
+	else if (strcmp(did, tid) == 0)                                              \
+	{                                                                            \
+		calldata_set_string(cd, "tag_data", libvlc_media_get_meta_(media, tag)); \
 	}
 
 	if (strcmp(data_id, "title") == 0)
-		calldata_set_string(cd, "tag_data",
-				    libvlc_media_get_meta_(media,
-							   libvlc_meta_Title));
+	{
+		calldata_set_string(cd, "tag_data", libvlc_media_get_meta_(media, libvlc_meta_Title));
+	}
 
 	VLC_META(media, cd, data_id, "artist", libvlc_meta_Artist)
 	VLC_META(media, cd, data_id, "genre", libvlc_meta_Genre)
@@ -535,11 +568,13 @@ static void vlcs_destroy(void *data)
 	struct vlc_source *c = data;
 	terminate_process_array(&(c->files));
 
-	if (c->media_list_player) {
+	if (c->media_list_player)
+	{
 		libvlc_media_list_player_stop_(c->media_list_player);
 		libvlc_media_list_player_release_(c->media_list_player);
 	}
-	if (c->media_player) {
+	if (c->media_player)
+	{
 		libvlc_media_player_release_(c->media_player);
 	}
 
@@ -555,7 +590,9 @@ static void *vlcs_video_lock(void *data, void **planes)
 {
 	struct vlc_source *c = data;
 	for (size_t i = 0; i < MAX_AV_PLANES && c->frame.data[i] != NULL; i++)
+	{
 		planes[i] = c->frame.data[i];
+	}
 	return NULL;
 }
 
@@ -568,40 +605,45 @@ static void vlcs_video_display(void *data, void *picture)
 	UNUSED_PARAMETER(picture);
 }
 
-static void calculate_display_size(struct vlc_source *c, unsigned *width,
-				   unsigned *height)
+static void calculate_display_size(struct vlc_source *c, unsigned *width, unsigned *height)
 {
 	libvlc_media_t *media = libvlc_media_player_get_media_(c->media_player);
-
 	if (!media)
+	{
 		return;
+	}
 
 	libvlc_media_track_t **tracks;
 
 	unsigned count = libvlc_media_tracks_get_(media, &tracks);
 
-	if (count > 0) {
-		for (unsigned i = 0; i < count; i++) {
+	if (count > 0)
+	{
+		for (unsigned i = 0; i < count; i++)
+		{
 			libvlc_media_track_t *track = tracks[i];
 
 			if (track->i_type != libvlc_track_video)
+			{
 				continue;
+			}
 
 			unsigned display_width = track->video->i_width;
 			unsigned display_height = track->video->i_height;
 
 			if (display_width == 0 || display_height == 0)
+			{
 				continue;
-
-			/* Adjust for Sample Aspect Ratio (SAR) */
-			if (track->video->i_sar_num > 0 &&
-			    track->video->i_sar_den > 0) {
-				display_width = (unsigned)util_mul_div64(
-					display_width, track->video->i_sar_num,
-					track->video->i_sar_den);
 			}
 
-			switch (track->video->i_orientation) {
+			/* Adjust for Sample Aspect Ratio (SAR) */
+			if (track->video->i_sar_num > 0 && track->video->i_sar_den > 0)
+			{
+				display_width = (unsigned)util_mul_div64(display_width, track->video->i_sar_num, track->video->i_sar_den);
+			}
+
+			switch (track->video->i_orientation)
+			{
 			case libvlc_video_orient_left_top:
 			case libvlc_video_orient_left_bottom:
 			case libvlc_video_orient_right_top:
@@ -617,16 +659,12 @@ static void calculate_display_size(struct vlc_source *c, unsigned *width,
 				break;
 			}
 		}
-
 		libvlc_media_tracks_release_(tracks, count);
 	}
-
 	libvlc_media_release_(media);
 }
 
-static unsigned vlcs_video_format(void **p_data, char *chroma, unsigned *width,
-				  unsigned *height, unsigned *pitches,
-				  unsigned *lines)
+static unsigned vlcs_video_format(void **p_data, char *chroma, unsigned *width, unsigned *height, unsigned *pitches, unsigned *lines)
 {
 	struct vlc_source *c = *p_data;
 	enum video_format new_format;
@@ -644,22 +682,22 @@ static unsigned vlcs_video_format(void **p_data, char *chroma, unsigned *width,
 	calculate_display_size(c, width, height);
 
 	/* don't allocate a new frame if format/width/height hasn't changed */
-	if (c->frame.format != new_format || c->frame.width != *width ||
-	    c->frame.height != *height) {
+	if (c->frame.format != new_format || c->frame.width != *width || c->frame.height != *height)
+	{
 		obs_source_frame_free(&c->frame);
 		obs_source_frame_init(&c->frame, new_format, *width, *height);
 
 		c->frame.format = new_format;
 		c->frame.full_range = new_range;
-		range = c->frame.full_range ? VIDEO_RANGE_FULL
-					    : VIDEO_RANGE_PARTIAL;
+		range = c->frame.full_range ? VIDEO_RANGE_FULL : VIDEO_RANGE_PARTIAL;
 		video_format_get_parameters_for_format(
 			VIDEO_CS_DEFAULT, range, new_format,
 			c->frame.color_matrix, c->frame.color_range_min,
 			c->frame.color_range_max);
 	}
 
-	while (c->frame.data[i]) {
+	while (c->frame.data[i])
+	{
 		pitches[i] = (unsigned)c->frame.linesize[i];
 		lines[i] = get_format_lines(c->frame.format, *height, i);
 		i++;
@@ -668,13 +706,13 @@ static unsigned vlcs_video_format(void **p_data, char *chroma, unsigned *width,
 	return 1;
 }
 
-static void vlcs_audio_play(void *data, const void *samples, unsigned count,
-			    int64_t pts)
+static void vlcs_audio_play(void *data, const void *samples, unsigned count, int64_t pts)
 {
 	struct vlc_source *c = data;
 	size_t size = get_audio_size(c->audio.format, c->audio.speakers, count);
 
-	if (c->audio_capacity < count) {
+	if (c->audio_capacity < count)
+	{
 		c->audio.data[0] = brealloc((void *)c->audio.data[0], size);
 		c->audio_capacity = count;
 	}
@@ -686,8 +724,7 @@ static void vlcs_audio_play(void *data, const void *samples, unsigned count,
 	obs_source_output_audio(c->source, &c->audio);
 }
 
-static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
-			    unsigned *channels)
+static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate, unsigned *channels)
 {
 	struct vlc_source *c = *p_data;
 	enum audio_format new_audio_format;
@@ -697,13 +734,17 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 
 	new_audio_format = convert_vlc_audio_format(format);
 	if (*channels > out_channels)
+	{
 		*channels = out_channels;
+	}
 
 	/* don't free audio data if the data is the same format */
 	if (c->audio.format == new_audio_format &&
-	    c->audio.samples_per_sec == *rate &&
-	    c->audio.speakers == (enum speaker_layout) * channels)
+		c->audio.samples_per_sec == *rate &&
+		c->audio.speakers == (enum speaker_layout) * channels)
+	{
 		return 0;
+	}
 
 	c->audio_capacity = 0;
 	bfree((void *)c->audio.data[0]);
@@ -715,29 +756,35 @@ static int vlcs_audio_setup(void **p_data, char *format, unsigned *rate,
 	return 0;
 }
 
-static void run_streamlink_server(struct media_file_data *data, const char *url, struct vlc_config *config)
+static void run_streamlink_server(struct media_file_data *data, const char *url, struct streamlink_config *config)
 {
 	char command[4096] = "streamlink --player-external-http --player-external-http-interface 127.0.0.1";
-	if (strstr(config->streamlink_rest_options, "--url") == NULL) {
+	if (strstr(config->rest_options, "--url") == NULL)
+	{
 		strcat(command, " --url ");
 		strcat(command, url);
 	}
-	if (strstr(config->streamlink_rest_options, "--default-stream") == NULL) {
+	if (strstr(config->rest_options, "--default-stream") == NULL)
+	{
 		char *fallback_quality = strstr("best,1080p60,1080p,936p60,936p,720p60,720p,480p,360p,160p,worst", config->quality);
 		strcat(command, " --default-stream ");
 		strcat(command, fallback_quality);
 	}
+
 	int port;
-	const char *port_option = strstr(config->streamlink_rest_options, "--player-external-http-port");
-	if (port_option == NULL) {
+	const char *port_option = strstr(config->rest_options, "--player-external-http-port");
+	if (port_option == NULL)
+	{
 		port = get_free_port();
 		snprintf(command, sizeof(command), "%s --player-external-http-port %d", command, port);
-	} else {
+	}
+	else
+	{
 		port = atoi(&port_option[sizeof("--player-external-http-port")]);
 	}
-	config->twitch_low_latency_enable && strcat(command, " --twitch-low-latency");
-	config->twitch_disable_ads && strcat(command, " --twitch-disable-ads");
-	snprintf(command, sizeof(command), "%s %s", command, config->streamlink_rest_options);
+	config->twitch_low_latency_enable &&strcat(command, " --twitch-low-latency");
+	config->twitch_disable_ads &&strcat(command, " --twitch-disable-ads");
+	snprintf(command, sizeof(command), "%s %s", command, config->rest_options);
 
 	terminate_process(data->process_information);
 	data->process_information = create_process(command, config->show_cmd);
@@ -745,62 +792,6 @@ static void run_streamlink_server(struct media_file_data *data, const char *url,
 	char server_url[25];
 	snprintf(server_url, sizeof(server_url), "http://127.0.0.1:%d/", port);
 	data->path = server_url;
-}
-
-static void add_file(struct vlc_source *c, media_file_array_t *new_files, const char *path, struct vlc_config *vlc_config)
-{
-	struct dstr new_path = {0};
-	dstr_copy(&new_path, path);
-	bool is_url = path && strstr(path, "://") != NULL;
-#ifdef _WIN32
-	if (!is_url)
-		dstr_replace(&new_path, "/", "\\");
-#endif
-	struct media_file_data data = {0};
-	if (is_url && is_streamlink_available && vlc_config->streamlink_enable) {
-		run_streamlink_server(&data, new_path.array, vlc_config);
-		dstr_copy(&new_path, data.path);
-	}
-	libvlc_media_t *new_media = get_media(&c->files, new_path.array);
-	if (!new_media)
-		new_media = get_media(new_files, new_path.array);
-	if (!new_media)
-		new_media = create_media_from_file(new_path.array);
-
-	if (new_media) {
-		char buffer[512];
-		snprintf(buffer, sizeof(buffer), ":audio-track=%d", vlc_config->track_index - 1);
-		libvlc_media_add_option_(new_media, buffer);
-
-		snprintf(buffer, sizeof(buffer), ":avcodec-hw=%s", vlc_config->hw_value);
-		libvlc_media_add_option_(new_media, buffer);
-
-		if (is_url) {
-			snprintf(buffer, sizeof(buffer), ":network-caching=%d", vlc_config->network_caching);
-			libvlc_media_add_option_(new_media, buffer);
-		}
-		if (vlc_config->subtitle_enable) {
-			snprintf(buffer, sizeof(buffer), ":sub-track=%d", vlc_config->subtitle_index - 1);
-			libvlc_media_add_option_(new_media, buffer);
-		}
-		if (vlc_config->skip_b_frames) {
-			libvlc_media_add_option_(new_media, ":avcodec-skip-frame=1");
-		}
-
-		strcpy(buffer, vlc_config->vlc_rest_options);
-		char *next_token = NULL;
-		char *option = strtok_s(buffer, " ", &next_token);
-		while (option != NULL) {
-			libvlc_media_add_option_(new_media, option);
-			option = strtok_s(NULL, " ", &next_token);
-		}
-
-		data.path = new_path.array;
-		data.media = new_media;
-		da_push_back(*new_files, &data);
-	} else {
-		dstr_free(&new_path);
-	}
 }
 
 static bool valid_extension(const char *ext)
@@ -816,13 +807,15 @@ static bool valid_extension(const char *ext)
 	b = &EXTENSIONS_MEDIA[1];
 	e = strchr(b, ';');
 
-	for (;;) {
+	for (;;)
+	{
 		if (e)
 			dstr_ncopy(&test, b, e - b);
 		else
 			dstr_copy(&test, b);
 
-		if (dstr_cmpi(&test, ext) == 0) {
+		if (dstr_cmpi(&test, ext) == 0)
+		{
 			valid = true;
 			break;
 		}
@@ -838,177 +831,272 @@ static bool valid_extension(const char *ext)
 	return valid;
 }
 
-static bool is_restart_vlc_(struct vlc_config *old, struct vlc_config *new)
+static void add_file(struct vlc_source *c, media_file_array_t *new_files, const char *path)
 {
-	// Не проверяет значение monitoring_type потому что на его изменение реагирует функция audio_monitoring_changed.
-	if (old->network_caching != new->network_caching || old->show_cmd != new->show_cmd || old->skip_b_frames != new->skip_b_frames
-		|| old->streamlink_enable != new->streamlink_enable || old->subtitle_enable != new->subtitle_enable
-		|| old->subtitle_index != new->subtitle_index || old->track_index != new->track_index || old->twitch_disable_ads != new->twitch_disable_ads
-		|| old->twitch_low_latency_enable != new->twitch_low_latency_enable
-		|| strcmp(old->streamlink_url, new->streamlink_url) != 0
-		|| strcmp(old->hw_value, new->hw_value) != 0
-		|| strcmp(old->quality, new->quality) != 0
-		|| strcmp(old->streamlink_rest_options, new->streamlink_rest_options) != 0
-		|| strcmp(old->vlc_rest_options, new->vlc_rest_options) != 0) {
+	struct vlc_config *vlc_config = &c->vlc_config;
+	struct streamlink_config *streamlink_config = &c->streamlink_config;
+
+	struct dstr new_path = {0};
+	dstr_copy(&new_path, path);
+	bool is_url = path && strstr(path, "://") != NULL;
+#ifdef _WIN32
+	if (!is_url)
+	{
+		dstr_replace(&new_path, "/", "\\");
+	}
+#endif
+	struct media_file_data data = {0};
+	if (is_url && is_streamlink_available && streamlink_config->enable)
+	{
+		run_streamlink_server(&data, new_path.array, streamlink_config);
+		dstr_copy(&new_path, data.path);
+	}
+
+	libvlc_media_t *new_media = get_media(&c->files, new_path.array);
+	if (!new_media)
+	{
+		new_media = get_media(new_files, new_path.array);
+	}
+	if (!new_media)
+	{
+		new_media = create_media_from_file(new_path.array);
+	}
+
+	if (new_media)
+	{
+		char buffer[512];
+		snprintf(buffer, sizeof(buffer), ":audio-track=%d", vlc_config->track_index - 1);
+		libvlc_media_add_option_(new_media, buffer);
+
+		snprintf(buffer, sizeof(buffer), ":avcodec-hw=%s", vlc_config->hw_value);
+		libvlc_media_add_option_(new_media, buffer);
+
+		if (is_url)
+		{
+			snprintf(buffer, sizeof(buffer), ":network-caching=%d", vlc_config->network_caching);
+			libvlc_media_add_option_(new_media, buffer);
+		}
+		if (vlc_config->subtitle_enable)
+		{
+			snprintf(buffer, sizeof(buffer), ":sub-track=%d", vlc_config->subtitle_index - 1);
+			libvlc_media_add_option_(new_media, buffer);
+		}
+		if (vlc_config->skip_b_frames)
+		{
+			libvlc_media_add_option_(new_media, ":avcodec-skip-frame=1");
+		}
+
+		strcpy(buffer, vlc_config->rest_options);
+		char *next_token = NULL;
+		char *option = strtok_s(buffer, " ", &next_token);
+		while (option != NULL)
+		{
+			libvlc_media_add_option_(new_media, option);
+			option = strtok_s(NULL, " ", &next_token);
+		}
+
+		data.path = new_path.array;
+		data.media = new_media;
+		da_push_back(*new_files, &data);
+	}
+	else
+	{
+		dstr_free(&new_path);
+	}
+}
+
+static void add_file_array(struct vlc_source *vlc_source, media_file_array_t *new_files, obs_data_array_t *array)
+{
+	size_t count = obs_data_array_count(array);
+	for (size_t i = 0; i < count; i++)
+	{
+		obs_data_t *item = obs_data_array_item(array, i);
+		const char *path = obs_data_get_string(item, "value");
+		if (!path || !*path)
+		{
+			obs_data_release(item);
+			continue;
+		}
+		os_dir_t *dir = os_opendir(path);
+
+		if (dir)
+		{
+			struct dstr dir_path = {0};
+			struct os_dirent *ent;
+
+			for (;;)
+			{
+				const char *ext;
+
+				ent = os_readdir(dir);
+				if (!ent)
+					break;
+				if (ent->directory)
+					continue;
+
+				ext = os_get_path_extension(ent->d_name);
+				if (!valid_extension(ext))
+					continue;
+
+				dstr_copy(&dir_path, path);
+				dstr_cat_ch(&dir_path, '/');
+				dstr_cat(&dir_path, ent->d_name);
+				add_file(vlc_source, new_files, dir_path.array);
+			}
+
+			dstr_free(&dir_path);
+			os_closedir(dir);
+		}
+		else
+		{
+			add_file(vlc_source, new_files, path);
+		}
+
+		obs_data_release(item);
+	}
+	obs_data_array_release(array);
+}
+
+static bool is_streamlink_config_changed(struct streamlink_config *old, struct streamlink_config *new)
+{
+	if (old->show_cmd != new->show_cmd || old->enable != new->enable || old->twitch_disable_ads != new->twitch_disable_ads || old->twitch_low_latency_enable != new->twitch_low_latency_enable || strcmp(old->url, new->url) != 0 || strcmp(old->quality, new->quality) != 0 || strcmp(old->rest_options, new->rest_options) != 0)
+	{
 		return true;
 	}
 	return false;
+}
+
+static bool is_vlc_config_changed(struct vlc_config *old, struct vlc_config *new)
+{
+	if (old->network_caching != new->network_caching || old->skip_b_frames != new->skip_b_frames || old->subtitle_enable != new->subtitle_enable || old->subtitle_index != new->subtitle_index || old->track_index != new->track_index || strcmp(old->hw_value, new->hw_value) != 0 || strcmp(old->rest_options, new->rest_options) != 0)
+	{
+		return true;
+	}
+	return false;
+}
+
+static void fill_vlc_config(struct vlc_config *vlc_config, obs_data_t *settings)
+{
+	vlc_config->network_caching = (int)obs_data_get_int(settings, S_NETWORK_CACHING);
+	vlc_config->track_index = (int)obs_data_get_int(settings, S_TRACK);
+	vlc_config->subtitle_index = (int)obs_data_get_int(settings, S_SUBTITLE_TRACK);
+	vlc_config->subtitle_enable = obs_data_get_bool(settings, S_SUBTITLE_ENABLE);
+	vlc_config->skip_b_frames = obs_data_get_bool(settings, S_VLC_SKIP_B_FRAMES);
+	vlc_config->hw_value = strdup(obs_data_get_string(settings, S_VLC_HW));
+	vlc_config->rest_options = strdup(obs_data_get_string(settings, S_VLC_REST_OPTIONS));
+}
+
+static void fill_streamlink_config(struct streamlink_config *streamlink_config, obs_data_t *settings)
+{
+	streamlink_config->enable = obs_data_get_bool(settings, S_SL_ENABLE);
+	streamlink_config->twitch_low_latency_enable = obs_data_get_bool(settings, S_SL_TWITCH_LOW_LATENCY);
+	streamlink_config->twitch_disable_ads = obs_data_get_bool(settings, S_SL_TWITCH_DISABLE_ADS);
+	streamlink_config->show_cmd = obs_data_get_bool(settings, S_SL_SHOW_CMD);
+	streamlink_config->quality = strdup(obs_data_get_string(settings, S_SLQ));
+	streamlink_config->url = strdup(obs_data_get_string(settings, S_SL_URL));
+	streamlink_config->rest_options = strdup(obs_data_get_string(settings, S_SL_REST_OPTIONS));
+}
+
+static void shuffle_playlist(media_file_array_t *files, bool shuffle)
+{
+	if (files->num > 1 && shuffle)
+	{
+		media_file_array_t new_files;
+		DARRAY(size_t)
+		idxs;
+
+		da_init(new_files);
+		da_init(idxs);
+		da_resize(idxs, files->num);
+		da_reserve(new_files, files->num);
+
+		for (size_t i = 0; i < files->num; i++)
+		{
+			idxs.array[i] = i;
+		}
+		for (size_t i = idxs.num; i > 0; i--)
+		{
+			size_t val = rand() % i;
+			size_t idx = idxs.array[val];
+			da_push_back(new_files, &files->array[idx]);
+			da_erase(idxs, val);
+		}
+
+		da_free(*files);
+		da_free(idxs);
+		files = &new_files;
+	}
+}
+
+static void restart_playback(struct vlc_source *vlc_source)
+{
+	libvlc_media_list_t *media_list = libvlc_media_list_new_(libvlc);
+	libvlc_media_list_lock_(media_list);
+	for (size_t i = 0; i < vlc_source->files.num; i++)
+	{
+		libvlc_media_list_add_media_(media_list, vlc_source->files.array[i].media);
+	}
+	libvlc_media_list_unlock_(media_list);
+	libvlc_media_list_player_set_media_list_(vlc_source->media_list_player, media_list);
+	libvlc_media_list_release_(media_list);
+
+	libvlc_media_list_player_set_playback_mode_(vlc_source->media_list_player, vlc_source->loop ? libvlc_playback_mode_loop : libvlc_playback_mode_default);
+
+	if (vlc_source->files.num && (vlc_source->behavior == BEHAVIOR_ALWAYS_PLAY || obs_source_active(vlc_source->source)))
+	{
+		libvlc_media_list_player_play_(vlc_source->media_list_player);
+	}
+	else
+	{
+		obs_source_output_video(vlc_source->source, NULL);
+	}
 }
 
 static void vlcs_update(void *data, obs_data_t *settings)
 {
 	media_file_array_t new_files;
 	media_file_array_t old_files;
-	da_init(new_files);
-	da_init(old_files);
-
 	struct vlc_source *vlc_source = data;
 	struct vlc_config vlc_config = {0};
+	struct streamlink_config streamlink_config = {0};
+	fill_vlc_config(&vlc_config, settings);
+	fill_streamlink_config(&streamlink_config, settings);
 
-	vlc_config.network_caching = (int)obs_data_get_int(settings, S_NETWORK_CACHING);
-	vlc_config.track_index = (int)obs_data_get_int(settings, S_TRACK);
-	vlc_config.subtitle_index =(int)obs_data_get_int(settings, S_SUBTITLE_TRACK);
+	// Не проверяет значение monitoring_type потому что на его изменение реагирует функция audio_monitoring_changed.
+	bool is_config_changed = is_vlc_config_changed(&vlc_source->vlc_config, &vlc_config) ||
+							 is_streamlink_config_changed(&vlc_source->streamlink_config, &streamlink_config);
+	if (is_config_changed)
+	{
+		da_init(new_files);
+		da_init(old_files);
 
-	vlc_config.subtitle_enable = obs_data_get_bool(settings, S_SUBTITLE_ENABLE);
-	vlc_config.skip_b_frames = obs_data_get_bool(settings, S_VLC_SKIP_B_FRAMES);
-	vlc_config.streamlink_enable = obs_data_get_bool(settings, S_SL_ENABLE);
-	vlc_config.twitch_low_latency_enable = obs_data_get_bool(settings, S_SL_TWITCH_LOW_LATENCY);
-	vlc_config.twitch_disable_ads = obs_data_get_bool(settings, S_SL_TWITCH_DISABLE_ADS);
-	vlc_config.show_cmd = obs_data_get_bool(settings, S_SL_SHOW_CMD);
+		replace_vlc_config(&vlc_source->vlc_config, &vlc_config);
+		replace_streamling_config(&vlc_source->streamlink_config, &streamlink_config);
 
-	vlc_config.hw_value = strdup(obs_data_get_string(settings, S_VLC_HW));
-	vlc_config.vlc_rest_options = strdup(obs_data_get_string(settings, S_VLC_REST_OPTIONS));
-	vlc_config.quality = strdup(obs_data_get_string(settings, S_SLQ));
-	vlc_config.streamlink_url = strdup(obs_data_get_string(settings, S_SL_URL));
-	vlc_config.streamlink_rest_options = strdup(obs_data_get_string(settings, S_SL_REST_OPTIONS));
-
-	const char *behavior = obs_data_get_string(settings, S_BEHAVIOR);
-	if (astrcmpi(behavior, S_BEHAVIOR_PAUSE_UNPAUSE) == 0) {
-		vlc_source->behavior = BEHAVIOR_PAUSE_UNPAUSE;
-	} else if (astrcmpi(behavior, S_BEHAVIOR_ALWAYS_PLAY) == 0) {
-		vlc_source->behavior = BEHAVIOR_ALWAYS_PLAY;
-	} else { /* S_BEHAVIOR_STOP_RESTART */
-		vlc_source->behavior = BEHAVIOR_STOP_RESTART;
-	}
-
-	/* ------------------------------------- */
-	/* create new list of sources */
-
-	bool is_restart_vlc = is_restart_vlc_(&vlc_source->config, &vlc_config);
-	vlc_source->config = vlc_config;
-
-	if (is_restart_vlc && strlen(vlc_config.streamlink_url) != 0) {
-		add_file(vlc_source, &new_files, vlc_config.streamlink_url, &vlc_config);
-	} else if (is_restart_vlc) {
-		obs_data_array_t *array = obs_data_get_array(settings, S_PLAYLIST);
-		size_t count = obs_data_array_count(array);
-		for (size_t i = 0; i < count; i++) {
-			obs_data_t *item = obs_data_array_item(array, i);
-			const char *path = obs_data_get_string(item, "value");
-			if (!path || !*path) {
-				obs_data_release(item);
-				continue;
-			}
-			os_dir_t *dir = os_opendir(path);
-
-			if (dir) {
-				struct dstr dir_path = {0};
-				struct os_dirent *ent;
-
-				for (;;) {
-					const char *ext;
-
-					ent = os_readdir(dir);
-					if (!ent)
-						break;
-					if (ent->directory)
-						continue;
-
-					ext = os_get_path_extension(
-						ent->d_name);
-					if (!valid_extension(ext))
-						continue;
-
-					dstr_copy(&dir_path, path);
-					dstr_cat_ch(&dir_path, '/');
-					dstr_cat(&dir_path, ent->d_name);
-					add_file(vlc_source, &new_files, dir_path.array, &vlc_config);
-				}
-
-				dstr_free(&dir_path);
-				os_closedir(dir);
-			} else {
-				add_file(vlc_source, &new_files, path, &vlc_config);
-			}
-
-			obs_data_release(item);
+		if (strlen(streamlink_config.url) != 0)
+		{
+			add_file(vlc_source, &new_files, streamlink_config.url);
 		}
-		obs_data_array_release(array);
-	}
-	/* ------------------------------------- */
-	/* update settings data */
+		else
+		{
+			add_file_array(vlc_source, &new_files, obs_data_get_array(settings, S_PLAYLIST));
+		}
 
-	if (is_restart_vlc) {
 		libvlc_media_list_player_stop_(vlc_source->media_list_player);
 		pthread_mutex_lock(&vlc_source->mutex);
 		old_files = vlc_source->files;
 		vlc_source->files = new_files;
 		pthread_mutex_unlock(&vlc_source->mutex);
+
+		terminate_process_array(&old_files);
+		free_files(&old_files);
 	}
-
-	/* ------------------------------------- */
-	/* shuffle playlist */
-
-	vlc_source->shuffle = obs_data_get_bool(settings, S_SHUFFLE);
-	if (vlc_source->files.num > 1 && vlc_source->shuffle) {
-		media_file_array_t new_files;
-		DARRAY(size_t) idxs;
-
-		da_init(new_files);
-		da_init(idxs);
-		da_resize(idxs, vlc_source->files.num);
-		da_reserve(new_files, vlc_source->files.num);
-
-		for (size_t i = 0; i < vlc_source->files.num; i++) {
-			idxs.array[i] = i;
-		}
-		for (size_t i = idxs.num; i > 0; i--) {
-			size_t val = rand() % i;
-			size_t idx = idxs.array[val];
-			da_push_back(new_files, &vlc_source->files.array[idx]);
-			da_erase(idxs, val);
-		}
-
-		da_free(vlc_source->files);
-		da_free(idxs);
-		vlc_source->files = new_files;
-	}
-
-	/* ------------------------------------- */
-	/* clean up and restart playback */
-
-	terminate_process_array(&old_files);
-	free_files(&old_files);
-
-	libvlc_media_list_t *media_list = libvlc_media_list_new_(libvlc);
-
-	libvlc_media_list_lock_(media_list);
-	for (size_t i = 0; i < vlc_source->files.num; i++) {
-		libvlc_media_list_add_media_(media_list, vlc_source->files.array[i].media);
-	}
-	libvlc_media_list_unlock_(media_list);
-
-	libvlc_media_list_player_set_media_list_(vlc_source->media_list_player, media_list);
-	libvlc_media_list_release_(media_list);
 
 	vlc_source->loop = obs_data_get_bool(settings, S_LOOP);
-	libvlc_media_list_player_set_playback_mode_(vlc_source->media_list_player, vlc_source->loop ? libvlc_playback_mode_loop : libvlc_playback_mode_default);
-
-	if (vlc_source->files.num && (vlc_source->behavior == BEHAVIOR_ALWAYS_PLAY || obs_source_active(vlc_source->source))) {
-		libvlc_media_list_player_play_(vlc_source->media_list_player);
-        } else {
-		obs_source_output_video(vlc_source->source, NULL);
-        }
+	vlc_source->shuffle = obs_data_get_int(settings, S_SHUFFLE);
+	vlc_source->behavior = (int)obs_data_get_int(settings, S_BEHAVIOR);
+	shuffle_playlist(&vlc_source->files, vlc_source->shuffle);
+	restart_playback(vlc_source);
 }
 
 static void vlcs_started(const struct libvlc_event_t *event, void *data)
@@ -1022,7 +1110,8 @@ static void vlcs_started(const struct libvlc_event_t *event, void *data)
 static void vlcs_stopped(const struct libvlc_event_t *event, void *data)
 {
 	struct vlc_source *c = data;
-	if (!c->loop) {
+	if (!c->loop)
+	{
 		obs_source_output_video(c->source, NULL);
 	}
 
@@ -1034,10 +1123,10 @@ static void vlcs_stopped(const struct libvlc_event_t *event, void *data)
 static enum obs_media_state vlcs_get_state(void *data)
 {
 	struct vlc_source *c = data;
-
 	libvlc_state_t state = libvlc_media_player_get_state_(c->media_player);
 
-	switch (state) {
+	switch (state)
+	{
 	case libvlc_NothingSpecial:
 		return OBS_MEDIA_STATE_NONE;
 	case libvlc_Opening:
@@ -1055,26 +1144,26 @@ static enum obs_media_state vlcs_get_state(void *data)
 	case libvlc_Error:
 		return OBS_MEDIA_STATE_ERROR;
 	}
-
 	return 0;
 }
 
 static void vlcs_play_pause(void *data, bool pause)
 {
 	struct vlc_source *c = data;
-
 	libvlc_state_t state = libvlc_media_player_get_state_(c->media_player);
-
 	if (pause && state == libvlc_Playing)
+	{
 		libvlc_media_list_player_pause_(c->media_list_player);
+	}
 	else if (!pause && state == libvlc_Paused)
+	{
 		libvlc_media_list_player_play_(c->media_list_player);
+	}
 }
 
 static void vlcs_restart(void *data)
 {
 	struct vlc_source *c = data;
-
 	libvlc_media_list_player_stop_(c->media_list_player);
 	libvlc_media_list_player_play_(c->media_list_player);
 }
@@ -1082,7 +1171,6 @@ static void vlcs_restart(void *data)
 static void vlcs_stop(void *data)
 {
 	struct vlc_source *c = data;
-
 	libvlc_media_list_player_stop_(c->media_list_player);
 	obs_source_output_video(c->source, NULL);
 }
@@ -1090,128 +1178,111 @@ static void vlcs_stop(void *data)
 static void vlcs_playlist_next(void *data)
 {
 	struct vlc_source *c = data;
-
 	libvlc_media_list_player_next_(c->media_list_player);
 }
 
 static void vlcs_playlist_prev(void *data)
 {
 	struct vlc_source *c = data;
-
 	libvlc_media_list_player_previous_(c->media_list_player);
 }
 
 static int64_t vlcs_get_duration(void *data)
 {
 	struct vlc_source *c = data;
-
 	return (int64_t)libvlc_media_player_get_length_(c->media_player);
 }
 
 static int64_t vlcs_get_time(void *data)
 {
 	struct vlc_source *c = data;
-
 	return (int64_t)libvlc_media_player_get_time_(c->media_player);
 }
 
 static void vlcs_set_time(void *data, int64_t ms)
 {
 	struct vlc_source *c = data;
-
 	libvlc_media_player_set_time_(c->media_player, (libvlc_time_t)ms);
 }
 
-static void vlcs_play_pause_hotkey(void *data, obs_hotkey_id id,
-				   obs_hotkey_t *hotkey, bool pressed)
+static void vlcs_play_pause_hotkey(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed)
 {
 	UNUSED_PARAMETER(id);
 	UNUSED_PARAMETER(hotkey);
 
 	struct vlc_source *c = data;
-
 	enum obs_media_state state = obs_source_media_get_state(c->source);
 
-	if (pressed && obs_source_showing(c->source)) {
+	if (pressed && obs_source_showing(c->source))
+	{
 		if (state == OBS_MEDIA_STATE_PLAYING)
+		{
 			obs_source_media_play_pause(c->source, true);
+		}
 		else if (state == OBS_MEDIA_STATE_PAUSED)
+		{
 			obs_source_media_play_pause(c->source, false);
+		}
 	}
 }
 
-static void vlcs_restart_hotkey(void *data, obs_hotkey_id id,
-				obs_hotkey_t *hotkey, bool pressed)
+static void vlcs_restart_hotkey(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed)
 {
 	UNUSED_PARAMETER(id);
 	UNUSED_PARAMETER(hotkey);
 
 	struct vlc_source *c = data;
-
 	if (pressed && obs_source_showing(c->source))
+	{
 		obs_source_media_restart(c->source);
+	}
 }
 
-static void vlcs_stop_hotkey(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey,
-			     bool pressed)
+static void vlcs_stop_hotkey(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed)
 {
 	UNUSED_PARAMETER(id);
 	UNUSED_PARAMETER(hotkey);
 
 	struct vlc_source *c = data;
-
 	if (pressed && obs_source_showing(c->source))
+	{
 		obs_source_media_stop(c->source);
+	}
 }
 
-static void vlcs_playlist_next_hotkey(void *data, obs_hotkey_id id,
-				      obs_hotkey_t *hotkey, bool pressed)
+static void vlcs_playlist_next_hotkey(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed)
 {
 	UNUSED_PARAMETER(id);
 	UNUSED_PARAMETER(hotkey);
 
 	struct vlc_source *c = data;
-
 	if (pressed && obs_source_showing(c->source))
+	{
 		obs_source_media_next(c->source);
+	}
 }
 
-static void vlcs_playlist_prev_hotkey(void *data, obs_hotkey_id id,
-				      obs_hotkey_t *hotkey, bool pressed)
+static void vlcs_playlist_prev_hotkey(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed)
 {
 	UNUSED_PARAMETER(id);
 	UNUSED_PARAMETER(hotkey);
 
 	struct vlc_source *c = data;
-
 	if (pressed && obs_source_showing(c->source))
+	{
 		obs_source_media_previous(c->source);
+	}
 }
 
 static void *vlcs_create(obs_data_t *settings, obs_source_t *source)
 {
 	struct vlc_source *c = bzalloc(sizeof(*c));
 	c->source = source;
-
-	c->play_pause_hotkey = obs_hotkey_register_source(
-		source, "VLCSource.PlayPause", obs_module_text("PlayPause"),
-		vlcs_play_pause_hotkey, c);
-
-	c->restart_hotkey = obs_hotkey_register_source(
-		source, "VLCSource.Restart", obs_module_text("Restart"),
-		vlcs_restart_hotkey, c);
-
-	c->stop_hotkey = obs_hotkey_register_source(source, "VLCSource.Stop",
-						    obs_module_text("Stop"),
-						    vlcs_stop_hotkey, c);
-
-	c->playlist_next_hotkey = obs_hotkey_register_source(
-		source, "VLCSource.PlaylistNext",
-		obs_module_text("PlaylistNext"), vlcs_playlist_next_hotkey, c);
-
-	c->playlist_prev_hotkey = obs_hotkey_register_source(
-		source, "VLCSource.PlaylistPrev",
-		obs_module_text("PlaylistPrev"), vlcs_playlist_prev_hotkey, c);
+	c->play_pause_hotkey = obs_hotkey_register_source(source, "VLCSource.PlayPause", obs_module_text("PlayPause"), vlcs_play_pause_hotkey, c);
+	c->restart_hotkey = obs_hotkey_register_source(source, "VLCSource.Restart", obs_module_text("Restart"), vlcs_restart_hotkey, c);
+	c->stop_hotkey = obs_hotkey_register_source(source, "VLCSource.Stop", obs_module_text("Stop"), vlcs_stop_hotkey, c);
+	c->playlist_next_hotkey = obs_hotkey_register_source(source, "VLCSource.PlaylistNext", obs_module_text("PlaylistNext"), vlcs_playlist_next_hotkey, c);
+	c->playlist_prev_hotkey = obs_hotkey_register_source(source, "VLCSource.PlaylistPrev", obs_module_text("PlaylistPrev"), vlcs_playlist_prev_hotkey, c);
 
 	pthread_mutex_init_value(&c->mutex);
 	if (pthread_mutex_init(&c->mutex, NULL) != 0)
@@ -1228,25 +1299,18 @@ static void *vlcs_create(obs_data_t *settings, obs_source_t *source)
 	if (!c->media_player)
 		goto error;
 
-	libvlc_media_list_player_set_media_player_(c->media_list_player,
-						   c->media_player);
+	libvlc_media_list_player_set_media_player_(c->media_list_player, c->media_player);
 
-	libvlc_video_set_callbacks_(c->media_player, vlcs_video_lock, NULL,
-				    vlcs_video_display, c);
-	libvlc_video_set_format_callbacks_(c->media_player, vlcs_video_format,
-					   NULL);
+	libvlc_video_set_callbacks_(c->media_player, vlcs_video_lock, NULL, vlcs_video_display, c);
+	libvlc_video_set_format_callbacks_(c->media_player, vlcs_video_format, NULL);
 
-	libvlc_audio_set_callbacks_(c->media_player, vlcs_audio_play, NULL,
-				    NULL, NULL, NULL, c);
-	libvlc_audio_set_format_callbacks_(c->media_player, vlcs_audio_setup,
-					   NULL);
+	libvlc_audio_set_callbacks_(c->media_player, vlcs_audio_play, NULL, NULL, NULL, NULL, c);
+	libvlc_audio_set_format_callbacks_(c->media_player, vlcs_audio_setup, NULL);
 
 	libvlc_event_manager_t *event_manager;
 	event_manager = libvlc_media_player_event_manager_(c->media_player);
-	libvlc_event_attach_(event_manager, libvlc_MediaPlayerEndReached,
-			     vlcs_stopped, c);
-	libvlc_event_attach_(event_manager, libvlc_MediaPlayerOpening,
-			     vlcs_started, c);
+	libvlc_event_attach_(event_manager, libvlc_MediaPlayerEndReached, vlcs_stopped, c);
+	libvlc_event_attach_(event_manager, libvlc_MediaPlayerOpening, vlcs_started, c);
 
 	proc_handler_t *ph = obs_source_get_proc_handler(source);
 	proc_handler_add(ph, "void get_metadata(in string tag_id out string tag_data)", vlcs_get_metadata, c);
@@ -1269,10 +1333,12 @@ static void vlcs_activate(void *data)
 {
 	struct vlc_source *c = data;
 
-	if (c->behavior == BEHAVIOR_STOP_RESTART) {
+	if (c->behavior == BEHAVIOR_STOP_RESTART)
+	{
 		libvlc_media_list_player_play_(c->media_list_player);
-
-	} else if (c->behavior == BEHAVIOR_PAUSE_UNPAUSE) {
+	}
+	else if (c->behavior == BEHAVIOR_PAUSE_UNPAUSE)
+	{
 		libvlc_media_list_player_play_(c->media_list_player);
 	}
 }
@@ -1281,11 +1347,13 @@ static void vlcs_deactivate(void *data)
 {
 	struct vlc_source *c = data;
 
-	if (c->behavior == BEHAVIOR_STOP_RESTART) {
+	if (c->behavior == BEHAVIOR_STOP_RESTART)
+	{
 		libvlc_media_list_player_stop_(c->media_list_player);
 		obs_source_output_video(c->source, NULL);
-
-	} else if (c->behavior == BEHAVIOR_PAUSE_UNPAUSE) {
+	}
+	else if (c->behavior == BEHAVIOR_PAUSE_UNPAUSE)
+	{
 		libvlc_media_list_player_pause_(c->media_list_player);
 	}
 }
@@ -1294,7 +1362,7 @@ static void vlcs_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_bool(settings, S_LOOP, true);
 	obs_data_set_default_bool(settings, S_SHUFFLE, false);
-	obs_data_set_default_string(settings, S_BEHAVIOR, S_BEHAVIOR_STOP_RESTART);
+	obs_data_set_default_int(settings, S_BEHAVIOR, BEHAVIOR_STOP_RESTART);
 	obs_data_set_default_int(settings, S_NETWORK_CACHING, 400);
 	obs_data_set_default_int(settings, S_TRACK, 1);
 	obs_data_set_default_bool(settings, S_SUBTITLE_ENABLE, false);
@@ -1324,9 +1392,11 @@ static obs_properties_t *vlcs_properties(void *data)
 
 	obs_properties_set_flags(root_ppts, OBS_PROPERTIES_DEFER_UPDATE);
 
-	if (c) {
+	if (c)
+	{
 		pthread_mutex_lock(&c->mutex);
-		if (c->files.num) {
+		if (c->files.num)
+		{
 			struct media_file_data *last = da_end(c->files);
 			const char *slash;
 
@@ -1347,7 +1417,8 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_property_list_add_int(p, T_AM_BOTH, OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT);
 	obs_property_set_modified_callback2(p, audio_monitoring_changed, c);
 
-	if (is_streamlink_available) {
+	if (is_streamlink_available)
+	{
 		obs_properties_t *streamlink_group_ppts = obs_properties_create();
 
 		obs_properties_add_text(streamlink_group_ppts, S_SL_URL, T_SL_URL, OBS_TEXT_DEFAULT);
@@ -1414,10 +1485,10 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_properties_add_bool(vlc_group_ppts, S_LOOP, T_LOOP);
 	obs_properties_add_bool(vlc_group_ppts, S_SHUFFLE, T_SHUFFLE);
 
-	p = obs_properties_add_list(vlc_group_ppts, S_BEHAVIOR, T_BEHAVIOR, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(p, T_BEHAVIOR_STOP_RESTART, S_BEHAVIOR_STOP_RESTART);
-	obs_property_list_add_string(p, T_BEHAVIOR_PAUSE_UNPAUSE, S_BEHAVIOR_PAUSE_UNPAUSE);
-	obs_property_list_add_string(p, T_BEHAVIOR_ALWAYS_PLAY, S_BEHAVIOR_ALWAYS_PLAY);
+	p = obs_properties_add_list(vlc_group_ppts, S_BEHAVIOR, T_BEHAVIOR, OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(p, T_BEHAVIOR_STOP_RESTART, BEHAVIOR_STOP_RESTART);
+	obs_property_list_add_int(p, T_BEHAVIOR_PAUSE_UNPAUSE, BEHAVIOR_PAUSE_UNPAUSE);
+	obs_property_list_add_int(p, T_BEHAVIOR_ALWAYS_PLAY, BEHAVIOR_ALWAYS_PLAY);
 
 	p = obs_properties_add_int(vlc_group_ppts, S_NETWORK_CACHING, T_NETWORK_CACHING, 100, 60000, 10);
 	obs_property_int_set_suffix(p, " ms");
@@ -1425,11 +1496,11 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_properties_add_int(vlc_group_ppts, S_TRACK, T_TRACK, 1, 10, 1);
 	obs_properties_add_bool(vlc_group_ppts, S_SUBTITLE_ENABLE, T_SUBTITLE_ENABLE);
 	obs_properties_add_int(vlc_group_ppts, S_SUBTITLE_TRACK, T_SUBTITLE_TRACK, 1, 1000, 1);
+
 	p = obs_properties_add_text(vlc_group_ppts, S_VLC_REST_OPTIONS, T_VLC_REST_OPTIONS, OBS_TEXT_DEFAULT);
 	obs_property_set_long_description(p, T_VLC_REST_OPTIONS_DESCRIPTION);
 
 	obs_properties_add_group(root_ppts, S_VLC_GROUP, T_VLC_GROUP, OBS_GROUP_NORMAL, vlc_group_ppts);
-
 	obs_properties_add_button(root_ppts, S_GITHUB_BUTTON, T_GITHUB_BUTTON, github_button_clicked);
 
 	return root_ppts;
@@ -1445,11 +1516,13 @@ static void missing_file_callback(void *src, const char *new_path, void *data)
 	obs_data_array_t *files = obs_data_get_array(settings, S_PLAYLIST);
 
 	size_t l = obs_data_array_count(files);
-	for (size_t i = 0; i < l; i++) {
+	for (size_t i = 0; i < l; i++)
+	{
 		obs_data_t *file = obs_data_array_item(files, i);
 		const char *path = obs_data_get_string(file, "value");
 
-		if (strcmp(path, orig_path) == 0) {
+		if (strcmp(path, orig_path) == 0)
+		{
 			if (new_path && *new_path)
 				obs_data_set_string(file, "value", new_path);
 			else
@@ -1478,13 +1551,16 @@ static obs_missing_files_t *vlcs_missingfiles(void *data)
 	obs_data_array_t *files = obs_data_get_array(settings, S_PLAYLIST);
 
 	size_t l = obs_data_array_count(files);
-	for (size_t i = 0; i < l; i++) {
+	for (size_t i = 0; i < l; i++)
+	{
 		obs_data_t *item = obs_data_array_item(files, i);
 		const char *path = obs_data_get_string(item, "value");
 
-		if (strcmp(path, "") != 0) {
+		if (strcmp(path, "") != 0)
+		{
 			if (!os_file_exists(path) &&
-			    strstr(path, "://") == NULL) {
+				strstr(path, "://") == NULL)
+			{
 				obs_missing_file_t *file =
 					obs_missing_file_create(
 						path, missing_file_callback,
@@ -1507,9 +1583,8 @@ static obs_missing_files_t *vlcs_missingfiles(void *data)
 struct obs_source_info vlc_source_info = {
 	.id = "vlc_source",
 	.type = OBS_SOURCE_TYPE_INPUT,
-	.output_flags = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_AUDIO |
-			OBS_SOURCE_DO_NOT_DUPLICATE |
-			OBS_SOURCE_CONTROLLABLE_MEDIA,
+	.output_flags = OBS_SOURCE_ASYNC_VIDEO | OBS_SOURCE_AUDIO
+		| OBS_SOURCE_DO_NOT_DUPLICATE | OBS_SOURCE_CONTROLLABLE_MEDIA,
 	.get_name = vlcs_get_name,
 	.create = vlcs_create,
 	.destroy = vlcs_destroy,
