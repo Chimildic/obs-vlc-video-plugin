@@ -13,7 +13,6 @@
 
 /* clang-format off */
 
-#define S_VLC_GROUP                    "vlc_group"
 #define S_PLAYLIST                     "playlist"
 #define S_LOOP                         "loop"
 #define S_SHUFFLE                      "shuffle"
@@ -48,7 +47,6 @@
 #define S_AM                           "audio_monitoring"
 
 #define T_(text) obs_module_text(text)
-#define T_VLC_GROUP                    T_("VLCGroup")
 #define T_PLAYLIST                     T_("Playlist")
 #define T_LOOP                         T_("LoopPlaylist")
 #define T_SHUFFLE                      T_("Shuffle")
@@ -66,9 +64,9 @@
 #define T_VLC_HW_D3D11                 T_("VLC.HW.D3D11")
 #define T_VLC_HW_NONE                  T_("VLC.HW.NONE")
 #define T_VLC_SKIP_B_FRAMES            T_("VLC.SkipBFrames")
+#define T_VLC_SKIP_B_FRAMES_DESCRIPTION T_("VLC.SkipBFrames.Description")
 #define T_VLC_REST_OPTIONS             T_("VLC.RestOptions")
 #define T_VLC_REST_OPTIONS_DESCRIPTION T_("VLC.RestOptions.Description")
-#define T_SL_ENABLE                    T_("Streamlink.Enable")
 #define T_SL_URL                       T_("Streamlink.URL")
 #define T_SL_TWITCH_LOW_LATENCY        T_("Streamlink.TwitchLowLatency")
 #define T_SL_TWITCH_LOW_LATENCY_DESCRIPTION T_("Streamlink.TwitchLowLatency.Description")

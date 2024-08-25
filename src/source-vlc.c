@@ -83,7 +83,8 @@ static obs_properties_t *vlcs_properties(void *data)
 	obs_property_list_add_string(p, T_VLC_HW_D3D11, S_VLC_HW_D3D11);
 	obs_property_list_add_string(p, T_VLC_HW_NONE, S_VLC_HW_NONE);
 
-	obs_properties_add_bool(root_ppts, S_VLC_SKIP_B_FRAMES, T_VLC_SKIP_B_FRAMES);
+	p = obs_properties_add_bool(root_ppts, S_VLC_SKIP_B_FRAMES, T_VLC_SKIP_B_FRAMES);
+    obs_property_set_long_description(p, T_VLC_SKIP_B_FRAMES_DESCRIPTION);
 
 	p = obs_properties_add_int(root_ppts, S_NETWORK_CACHING, T_NETWORK_CACHING, 100, 60000, 10);
 	obs_property_int_set_suffix(p, " ms");

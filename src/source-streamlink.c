@@ -79,7 +79,9 @@ static obs_properties_t *streamlink_properties(void *data)
 	p = obs_properties_add_text(root_ppts, S_VLC_REST_OPTIONS, T_VLC_REST_OPTIONS, OBS_TEXT_DEFAULT);
 	obs_property_set_long_description(p, T_VLC_REST_OPTIONS_DESCRIPTION);
 
-	obs_properties_add_bool(root_ppts, S_VLC_SKIP_B_FRAMES, T_VLC_SKIP_B_FRAMES);
+	p = obs_properties_add_bool(root_ppts, S_VLC_SKIP_B_FRAMES, T_VLC_SKIP_B_FRAMES);
+    obs_property_set_long_description(p, T_VLC_SKIP_B_FRAMES_DESCRIPTION);
+
 	obs_properties_add_button(root_ppts, S_GITHUB_BUTTON, T_GITHUB_BUTTON, github_button_clicked);
 
 	return root_ppts;
