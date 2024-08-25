@@ -14,7 +14,7 @@ find_package(LibVLC REQUIRED)
 add_library(vlc-video MODULE)
 add_library(OBS::vlc-video ALIAS vlc-video)
 
-target_sources(vlc-video PRIVATE vlc-video-plugin.c vlc-video-plugin.h vlc-video-source.c)
+target_sources(vlc-video PRIVATE plugin.c plugin.h core.c source-vlc.c source-streamlink.c)
 
 target_link_libraries(vlc-video PRIVATE OBS::libobs VLC::LibVLC)
 

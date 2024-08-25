@@ -3,7 +3,7 @@
 #endif
 
 #include <util/platform.h>
-#include "vlc-video-plugin.h"
+#include "plugin.h"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("vlc-video", "en-US")
@@ -200,6 +200,23 @@ static bool load_libvlc_module(void)
 }
 
 extern struct obs_source_info vlc_source_info;
+extern struct obs_source_info streamlink_source_info;
+
+static void toLowerCase(char *str)
+{
+	while (*str)
+	{
+		*str = tolower((unsigned char)*str);
+		str++;
+	}
+}
+
+static bool is_streamlink_available()
+{
+	char *env_path = getenv("PATH");
+	toLowerCase(env_path);
+	return strstr(env_path, "streamlink") != NULL;
+}
 
 bool load_libvlc(void)
 {
@@ -219,18 +236,20 @@ bool load_libvlc(void)
 bool obs_module_load(void)
 {
 	if (!load_libvlc_module()) {
-		blog(LOG_INFO, "[vlc-video]: Couldn't find VLC installation, "
-			       "VLC video source disabled");
+		blog(LOG_INFO, "[vlc-video]: Couldn't find VLC installation, VLC video source disabled");
 		return true;
 	}
 
 	if (!load_vlc_funcs())
 		return true;
 
-	blog(LOG_INFO, "[vlc-video]: VLC %s found, VLC video source enabled",
-	     libvlc_get_version_());
+	blog(LOG_INFO, "[vlc-video]: VLC %s found, VLC video source enabled", libvlc_get_version_());
 
 	obs_register_source(&vlc_source_info);
+	if (is_streamlink_available())
+	{
+		obs_register_source(&streamlink_source_info);
+	}
 	return true;
 }
 
