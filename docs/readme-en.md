@@ -8,15 +8,16 @@ Modified VLC-plugin with [Streamlink](https://streamlink.github.io) and hardware
 - Hardware acceleration support (move part of the load to the graphics card).
 - Custom UI
 
-<p align="center"><img width="85%" style="margin: 0" src="assets/vlc-video-plugin-properties-en.png"></img></p>
+<p align="center"><img width="80%" style="margin: 0" src="assets/vlc-video-plugin-properties-en.png"></img></p>
 
 ## Install
 
 > Save backup of the files before install: `vlc-video.dll`, `vlc-video.pdb`. Default path `C:\Program Files\obs-studio\obs-plugins\64bit`.
 
-1. [Install Streamlink](https://streamlink.github.io/install.html).
-2. Download archive in [releases](https://github.com/Chimildic/obs-vlc-video-plugin/releases).
-3. Unpack archive to root folder of OBS Studio. Default path `C:\Program Files\obs-studio`.
+1. [Install VLC Player](https://www.videolan.org/vlc/)
+2. [Install Streamlink](https://streamlink.github.io/install.html).
+3. Download archive in [releases](https://github.com/Chimildic/obs-vlc-video-plugin/releases).
+4. Unpack archive to root folder of OBS Studio. Default path `C:\Program Files\obs-studio`.
 
 ## Streamlink
 

@@ -2,23 +2,18 @@
 
 # obs-vlc-video-plugin
 
-Модифицированный VLC-плагин с поддержкой [Streamlink](https://streamlink.github.io) и аппаратного ускорения для OBS Studio.
+Модифицированный VLC-плагин с поддержкой [Streamlink](https://streamlink.github.io/) и аппаратного ускорения для OBS Studio.
 
-## Возможности
-
-- Запуск видеопотока по ссылке на канал через локальный сервер от Streamlink с дополнительными параметрами. Не только Twitch.
-- Поддержка аппаратного ускорения (перенос части нагрузки на видеокарту).
-- Настройка выведена в интерфейс плагина.
-
-<p align="center"><img width="85%" style="margin: 0" src="docs/assets/vlc-video-plugin-properties.png"></img></p>
+<p align="center"><img width="80%" style="margin: 0" src="docs/assets/vlc-video-plugin-properties.png"></img></p>
 
 ## Установка
 
 > Перед установкой сохраните резервную копию файлов `vlc-video.dll`, `vlc-video.pdb`. Путь по умолчанию `C:\Program Files\obs-studio\obs-plugins\64bit`.
 
-1. [Установите Streamlink](https://streamlink.github.io/install.html).
-2. Скачайте архив в разделе [релизов](https://github.com/Chimildic/obs-vlc-video-plugin/releases).
-3. Распакуйте содержание архива в корень папки OBS Studio. Путь по умолчанию `C:\Program Files\obs-studio`.
+1. [Установите VLC Player](https://www.videolan.org/vlc/)
+2. [Установите Streamlink](https://streamlink.github.io/install.html).
+3. Скачайте архив `vlc-plugin.zip` в разделе [релизов](https://github.com/Chimildic/obs-vlc-video-plugin/releases).
+4. Распакуйте содержание архива в корень папки OBS Studio с заменой файлов. Путь по умолчанию `C:\Program Files\obs-studio`.
 
 ## Streamlink
 
@@ -37,3 +32,9 @@ libVLC - библиотека, которую использует плагин 
 У плагина много внешних зависимостей, которых нет в этом репозитории. Для самостоятельной сборки `.dll` файла поместите модифицированный код в папку [vlc-video](https://github.com/obsproject/obs-studio/tree/master/plugins/vlc-video) из репозитория OBS Studio.
 
 > Функция `get_free_port` требует добавления зависимости `Ws2_32.lib`. Путь для Visual Studio: `Свойства проекта > Компоновщик > Ввод > Дополнительные зависимости`.
+
+## Обратная связь
+
+- [Github Issues](https://github.com/Chimildic/obs-vlc-video-plugin/issues)
+- [Телеграм](https://t.me/dev_chimildic)
+- [Донат](https://yoomoney.ru/to/410014208620686)
