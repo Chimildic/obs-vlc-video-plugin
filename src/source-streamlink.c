@@ -91,7 +91,7 @@ static void streamlink_defaults(obs_data_t *settings)
 {
 	vlcs_defaults(settings);
 	obs_data_set_default_bool(settings, S_SL_ENABLE, true);
-	obs_data_set_default_string(settings, S_SL_URL, "https://www.twitch.tv/igorghk");
+	obs_data_set_default_string(settings, S_SL_URL, "https://www.twitch.tv/");
 	obs_data_set_default_bool(settings, S_SL_TWITCH_LOW_LATENCY, false);
 	obs_data_set_default_bool(settings, S_SL_TWITCH_DISABLE_ADS, false);
 	obs_data_set_default_bool(settings, S_SL_SHOW_CMD, false);
